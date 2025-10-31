@@ -549,7 +549,7 @@ const JobCards = () => {
           </div>
         </div>
 
-        {/* Statistics Cards */}
+        Statistics Cards
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <StatCard
             title="Total Job Cards"

@@ -286,12 +286,12 @@ const SupervisorJobCards = () => {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <StatCard title="Total Job Cards" value={jobCardStats.totalJobCards} icon={<ClipboardList className="text-blue-600" />} color="text-blue-600" progress />
             <StatCard title="Pending Jobs" value={jobCardStats.pendingJobs} icon={<Calendar className="text-amber-600" />} color="text-amber-600" progress />
             <StatCard title="In Progress" value={jobCardStats.inProgressJobs} icon={<User className="text-orange-600" />} color="text-orange-600" progress />
             <StatCard title="Completed Jobs" value={jobCardStats.completedJobs} icon={<Tag className="text-green-600" />} color="text-green-600" progress />
-          </div>
+          </div> */}
 
           {/* Filters & Search */}
           <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
