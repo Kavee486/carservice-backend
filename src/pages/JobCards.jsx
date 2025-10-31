@@ -132,32 +132,45 @@ const JobCards = () => {
     setIsModalVisible(true);
   };
 
-  const handleEditJobCard = async (jobCard) => {
+  const handleEditJobCard = (jobCard) => {
     setCurrentJobCard(jobCard);
+    // initialize modal selections from existing booking-specific parts if available
     const bookingIdKey = String(jobCard.J_BookingID || '');
-    // First try to fetch authoritative booking parts synchronously so modal opens with correct data
-    try {
-      const resp = await getBookingPartsByBookingID(bookingIdKey);
-      if (resp?.StatusCode === 200 && Array.isArray(resp.ResultSet) && resp.ResultSet.length > 0) {
-        setBookingPartsMap(prev => ({ ...prev, [bookingIdKey]: resp.ResultSet || [] }));
-        const fetched = resp.ResultSet.map(bp => {
-          const partId = bp.PartID || bp.P_PartID || bp.PartId || bp.PARTID || bp.P_PartID;
-          const qty = parseInt(bp.Quantity || bp.Qty || bp.J_Qty || 0, 10) || 0;
-          const unit = parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.J_Charge || 0) || 0;
-          return { partId: String(partId || ''), qty: qty || 1, unitPrice: unit };
-        });
-        setSelectedPartsRows(fetched);
-      } else {
-        // fallback to jobCardItems stored in redux
-        const itemsForCard = Array.isArray(jobCardItems) ? jobCardItems.filter(it => String(it.J_JobCardID) === String(jobCard.J_JobCardID)) : [];
-        const partsRows = itemsForCard.map(it => ({ partId: it.J_PartID, qty: parseInt(it.J_Qty || 1, 10), unitPrice: parseFloat(it.J_Charge || 0) }));
-        setSelectedPartsRows(partsRows);
-      }
-    } catch (err) {
-      console.warn('Failed to fetch booking parts for edit modal', err);
+    const bookingParts = bookingPartsMap[bookingIdKey];
+    if (Array.isArray(bookingParts) && bookingParts.length > 0) {
+      // Map booking parts to modal rows. Support different naming conventions from backend.
+      const partsRowsFromBooking = bookingParts.map(bp => {
+        const partId = bp.PartID || bp.P_PartID || bp.PartId || bp.PARTID || bp.P_PartID;
+        const qty = parseInt(bp.Quantity || bp.Qty || bp.J_Qty || 0, 10) || 0;
+        const unit = parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.J_Charge || 0) || 0;
+        return { partId: String(partId || ''), qty: qty || 1, unitPrice: unit };
+      });
+      setSelectedPartsRows(partsRowsFromBooking);
+    } else {
+      // fallback to jobCardItems stored in redux if booking-specific parts not returned yet
       const itemsForCard = Array.isArray(jobCardItems) ? jobCardItems.filter(it => String(it.J_JobCardID) === String(jobCard.J_JobCardID)) : [];
       const partsRows = itemsForCard.map(it => ({ partId: it.J_PartID, qty: parseInt(it.J_Qty || 1, 10), unitPrice: parseFloat(it.J_Charge || 0) }));
       setSelectedPartsRows(partsRows);
+
+      // try to fetch booking parts on demand so modal can refresh with authoritative values
+      (async () => {
+        try {
+          const resp = await getBookingPartsByBookingID(bookingIdKey);
+          if (resp?.StatusCode === 200 && Array.isArray(resp.ResultSet) && resp.ResultSet.length > 0) {
+            const fetched = resp.ResultSet.map(bp => {
+              const partId = bp.PartID || bp.P_PartID || bp.PartId || bp.PARTID || bp.P_PartID;
+              const qty = parseInt(bp.Quantity || bp.Qty || bp.J_Qty || 0, 10) || 0;
+              const unit = parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.J_Charge || 0) || 0;
+              return { partId: String(partId || ''), qty: qty || 1, unitPrice: unit };
+            });
+            setBookingPartsMap(prev => ({ ...prev, [bookingIdKey]: resp.ResultSet || [] }));
+            setSelectedPartsRows(fetched);
+          }
+        } catch (err) {
+          // non-blocking
+          console.warn('Failed to fetch booking parts for edit modal', err);
+        }
+      })();
     }
     // services: try to parse ServiceNames if present (comma separated)
     const svcIds = [];
@@ -312,7 +325,7 @@ const JobCards = () => {
       try {
         const bookingId = jobCardData.J_BookingID || currentJobCard?.J_BookingID;
         const partsList = (selectedPartsRows || []).map(p => ({ PartID: parseInt(p.partId || 0, 10) || 0, Quantity: parseInt(p.qty || 0, 10) || 0 })).filter(p => p.PartID && p.Quantity);
-          if (bookingId && partsList.length > 0) {
+        if (bookingId && partsList.length > 0) {
           const payload = { J_BookingID: String(bookingId), PartsList: partsList };
           const respParts = await addBookingParts(payload);
           if (respParts?.StatusCode === 200) {
@@ -321,8 +334,6 @@ const JobCards = () => {
               const partsResp = await getBookingPartsByBookingID(bookingId);
               if (partsResp?.StatusCode === 200) {
                 setBookingPartsMap(prev => ({ ...prev, [bookingId]: partsResp.ResultSet || [] }));
-                // also refresh job card items list so Redux has up-to-date item rows
-                try { dispatch(GetAllJobCardItems()); } catch (e) {}
               }
             } catch (err) {
               console.warn('Failed to refresh booking parts', err);

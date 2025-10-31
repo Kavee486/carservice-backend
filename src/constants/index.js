@@ -1,7 +1,8 @@
 export const USER_ROLES = {
   ADMIN: 'admin',
   TECHNICIAN: 'technician',
-  CUSTOMER: 'customer'
+  CUSTOMER: 'customer',
+  SUPERVISOR: 'supervisor'
 };
 
 export const APPOINTMENT_STATUS = {
@@ -25,6 +26,7 @@ export const ROUTES = {
   ADMIN: '/admin',
   TECHNICIAN: '/technician',
   CUSTOMER: '/customer'
+  ,SUPERVISOR: '/supervisor'
 };
 
 export const COMPANY_INFO = {

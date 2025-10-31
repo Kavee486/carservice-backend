@@ -264,7 +264,7 @@ const Sidebar = ({ onLogout }) => {
       )}
 
       <div className={`
-        bg-gray-900 text-white min-h-screen p-4 flex flex-col flex-shrink-0
+        ${user?.role === USER_ROLES.SUPERVISOR ? 'bg-[#071225]' : 'bg-gray-900'} text-white min-h-screen p-4 flex flex-col flex-shrink-0
         transition-all duration-300 ease-in-out
         ${isSidebarVisible ? 'w-64' : 'w-20'}
         fixed lg:relative z-50
@@ -279,14 +279,19 @@ const Sidebar = ({ onLogout }) => {
             </div>
 
             {isSidebarVisible && (
-              <div className="leading-tight">
-                <h1 className="text-lg font-extrabold text-white tracking-tight">AutoMech</h1>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-xs text-blue-100 border border-white/5 font-medium">{String(user?.role || '').toUpperCase()}</span>
-                  <span className="text-xs text-gray-400">Admin dashboard</span>
+                <div className="leading-tight">
+                  {/* Logo title - clickable to the role's main dashboard */}
+                  <h1 className="text-lg font-extrabold text-white tracking-tight">
+                    <Link to={user?.role === USER_ROLES.SUPERVISOR ? '/supervisor' : '/admin'} className="hover:underline">AutoMech</Link>
+                  </h1>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-xs text-blue-100 border border-white/5 font-medium">{String(user?.role || '').toUpperCase()}</span>
+                    <span className="text-xs text-gray-400">
+                      {user?.role === USER_ROLES.SUPERVISOR ? 'Supervisor dashboard' : 'Admin dashboard'}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
 
           <button
