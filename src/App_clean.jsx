@@ -129,6 +129,19 @@ function App() {
             )
           }
         />
+        {/* supervisor Route */}
+        <Route
+          path="/supervisor"
+          element={
+            user?.role === USER_ROLES.SUPERVISOR ? (
+              <DashboardLayout title="Supervisor Dashboard" onLogout={handleLogout}>
+                <supervisorDashboard />
+              </DashboardLayout>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
 
         {/* Profile Route */}
         <Route

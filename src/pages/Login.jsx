@@ -126,13 +126,15 @@ const handleSendOtp = async () => {
       
       console.log('Raw RoleID from backend:', roleId);
       
-      // Map numeric role to string - FIXED LOGIC
+      // Map numeric role to string - include supervisor (RoleID = 4)
       if (roleId === 1) {
         roleString = 'customer';
       } else if (roleId === 2) {
         roleString = 'admin';
       } else if (roleId === 3) {
         roleString = 'technician';
+      } else if (roleId === 4) {
+        roleString = 'supervisor';
       }
 
       console.log('Mapped roleString:', roleString);
@@ -212,13 +214,15 @@ const handleOtpLogin = async (e) => {
         onLoginSuccess(storedUser);
       }
 
-      // Navigate based on detected role - FIXED LOGIC
+      // Navigate based on detected role - include supervisor
       let targetRoute = '/customer'; // default
       
       if (detectedRole === 'admin') {
         targetRoute = '/admin';
       } else if (detectedRole === 'technician') {
         targetRoute = '/technician';
+      } else if (detectedRole === 'supervisor') {
+        targetRoute = '/supervisor';
       } else if (detectedRole === 'customer') {
         targetRoute = '/customer';
       }

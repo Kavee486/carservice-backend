@@ -14,6 +14,7 @@ import Signup from './pages/Signup';
 import AdminDashboard from './pages/AdminDashboard';
 import TechnicianDashboard from './pages/TechnicianDashboard';
 import CustomerDashboard from './pages/CustomerDashboard';
+import SupervisorDashboard from './pages/SupervisorDashboard';
 import Profile from './pages/Profile';
 import PartsInventory from './pages/PartsInventory';
 import Services from './pages/Services';
@@ -170,6 +171,23 @@ function App() {
               return isCustomer ? (
                 <DashboardLayout title="Customer Dashboard" onLogout={handleLogout}>
                   <CustomerDashboard />
+                </DashboardLayout>
+              ) : (
+                <Navigate to="/login" replace />
+              );
+            })()
+          }
+        />
+
+        {/* Supervisor Route */}
+        <Route
+          path="/supervisor"
+          element={
+            (() => {
+              console.log('Supervisor route - user:', user, 'user.role:', user?.role, 'USER_ROLES.SUPERVISOR:', USER_ROLES.SUPERVISOR);
+              return user?.role === USER_ROLES.SUPERVISOR ? (
+                <DashboardLayout title="Supervisor Dashboard" onLogout={handleLogout}>
+                  <SupervisorDashboard />
                 </DashboardLayout>
               ) : (
                 <Navigate to="/login" replace />

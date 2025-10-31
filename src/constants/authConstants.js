@@ -12,5 +12,6 @@ export const CHECK_AUTH_STATUS = 'CHECK_AUTH_STATUS';
 export const USER_ROLES = {
   ADMIN: 'admin',
   TECHNICIAN: 'technician',
-  CUSTOMER: 'customer'
+  CUSTOMER: 'customer',
+  SUPERVISOR: 'supervisor'
 };

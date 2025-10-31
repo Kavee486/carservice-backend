@@ -383,9 +383,10 @@ export const authService = {
       let detectedRole = 'customer';
       const roleCandidate = data.RoleID || data.roleId || data.Result?.RoleID || data.Result?.roleId || null;
       const rc = Number(roleCandidate);
-      if (rc === 2) detectedRole = 'admin';
-      else if (rc === 3) detectedRole = 'technician';
-      else detectedRole = 'customer';
+  if (rc === 2) detectedRole = 'admin';
+  else if (rc === 3) detectedRole = 'technician';
+  else if (rc === 4) detectedRole = 'supervisor';
+  else detectedRole = 'customer';
 
       // Try to extract CustomerID or similar fields from anywhere in the response
       const idCandidates = [
@@ -449,6 +450,7 @@ export const authService = {
           const rid = Number(parsedUser.RoleID || parsedUser.roleID || parsedUser.roleId);
           if (rid === 2) parsedUser.role = 'admin';
           else if (rid === 3) parsedUser.role = 'technician';
+          else if (rid === 4) parsedUser.role = 'supervisor';
           else parsedUser.role = 'customer';
         }
       }
