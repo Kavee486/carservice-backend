@@ -263,7 +263,7 @@ const SupervisorJobCards = () => {
   );
 
   return (
-    <DashboardLayout>
+    <>
       <div className="h-full p-4 md:p-6">
         <div className="w-full space-y-6">
           {/* Header */}
@@ -608,7 +608,7 @@ const SupervisorJobCards = () => {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </>
   );
 };
 
