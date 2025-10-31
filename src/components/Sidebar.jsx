@@ -140,6 +140,12 @@ const Sidebar = ({ onLogout }) => {
           { icon: FileText, label: 'Previous Services', path: '/customer/previous-services' },
           { icon: User, label: 'Profile', path: '/profile' },
         ];
+      case USER_ROLES.SUPERVISOR:
+        return [
+          { icon: Home, label: 'Dashboard', path: '/supervisor' },
+          { icon: FileText, label: 'Job Cards', path: '/supervisor/job-cards' },
+          { icon: User, label: 'Profile', path: '/profile' },
+        ];
       default:
         return [];
     }

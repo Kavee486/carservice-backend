@@ -15,6 +15,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import TechnicianDashboard from './pages/TechnicianDashboard';
 import CustomerDashboard from './pages/CustomerDashboard';
 import SupervisorDashboard from './pages/SupervisorDashboard';
+import SupervisorJobCards from './pages/SupervisorJobCards';
 import Profile from './pages/Profile';
 import PartsInventory from './pages/PartsInventory';
 import Services from './pages/Services';
@@ -193,6 +194,18 @@ function App() {
                 <Navigate to="/login" replace />
               );
             })()
+          }
+        />
+        <Route
+          path="/supervisor/job-cards"
+          element={
+            user?.role === USER_ROLES.SUPERVISOR ? (
+              <DashboardLayout title="Supervisor Job Cards" onLogout={handleLogout}>
+                <SupervisorJobCards />
+              </DashboardLayout>
+            ) : (
+              <Navigate to="/login" replace />
+            )
           }
         />
 

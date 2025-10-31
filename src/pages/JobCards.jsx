@@ -1,5 +1,7 @@
 // components/JobCards.jsx
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { authService } from '../services/authServices';
 import { useSelector, useDispatch } from 'react-redux';
 import { ClipboardList, Plus, Search, Filter, Edit3, Trash2, RefreshCw, Calendar, User, Tag, AlertCircle, Package } from 'lucide-react';
 import { GetAllJobCards, AddJobCard, UpdateJobCard, DeleteJobCard } from '../actions/jobCardActions';
@@ -35,6 +37,8 @@ const JobCards = () => {
   // local cache for totals (Quantity/Price/Status) keyed by J_BookingID to reflect
   // newly-sent totals immediately in the UI when backend takes time to reflect them
   const [totalsMap, setTotalsMap] = useState({}); // bookingId -> { Quantity, Price, J_JobCardStatus }
+
+  const navigate = useNavigate();
 
   const toggleService = (id) => {
     setSelectedServices(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -251,6 +255,19 @@ const JobCards = () => {
 
         await dispatch(UpdateJobCard(jobCardData));
         alert('Job card updated successfully');
+        // If admin set status to In Progress, redirect to supervisor edit page for this booking
+        try {
+          const currentUser = authService.getCurrentUser();
+          if (jobCardData.J_JobCardStatus && String(jobCardData.J_JobCardStatus).toLowerCase() === 'in progress' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'Admin' || currentUser.role === 2 || currentUser.RoleID === 2)) {
+            // navigate to supervisor edit for this booking
+            const bookingId = jobCardData.J_BookingID || currentJobCard?.J_BookingID;
+            if (bookingId) {
+              navigate(`/supervisor/job-cards?edit=${encodeURIComponent(String(bookingId))}`);
+            }
+          }
+        } catch (e) {
+          // ignore navigation errors
+        }
       } else {
         await dispatch(AddJobCard(jobCardData));
         alert('Job card added successfully');

@@ -84,9 +84,9 @@ const SupervisorDashboardContent = () => {
 
 const SupervisorDashboard = () => {
   return (
-    <DashboardLayout title="Supervisor Dashboard">
+   
       <SupervisorDashboardContent />
-    </DashboardLayout>
+    
   );
 };
 

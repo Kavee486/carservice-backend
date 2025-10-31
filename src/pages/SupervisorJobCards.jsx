@@ -1,0 +1,615 @@
+import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
+import { GetAllJobCards } from '../actions/jobCardActions';
+import { GetAllJobCardItems } from '../actions/jobCardItemActions';
+import { fetchAllParts, fetchAllServices } from '../services/jobCardItemServices';
+import { updateBookingServices, addBookingParts, getBookingPartsByBookingID, addJobCard as addJobCardService } from '../services/jobCardServices';
+import DashboardLayout from '../components/DashboardLayout';
+import dayjs from 'dayjs';
+import { Edit3, ClipboardList, Search, Plus, Package, Filter, RefreshCw, Calendar, User, Tag, Trash2, AlertCircle } from 'lucide-react';
+
+const SupervisorJobCards = () => {
+  const dispatch = useDispatch();
+  const jobCardList = useSelector(state => state.jobCardList);
+  const { loading, jobCards = [] } = jobCardList || {};
+  const jobCardItemList = useSelector(state => state.jobCardItemList);
+  const { jobCardItems = [] } = jobCardItemList || {};
+
+  const [servicesList, setServicesList] = useState([]);
+  const [partsList, setPartsList] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [currentBookingId, setCurrentBookingId] = useState(null);
+  const [selectedServices, setSelectedServices] = useState([]);
+  const [selectedPartsRows, setSelectedPartsRows] = useState([]);
+  const [loadingSubmit, setLoadingSubmit] = useState(false);
+  const [serviceFilter, setServiceFilter] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [bookingPartsMap, setBookingPartsMap] = useState({});
+  const [totalsMap, setTotalsMap] = useState({});
+
+  // simple local helpers
+  const getPartName = (partId) => {
+    const p = partsList.find(x => String(x?.P_PartID) === String(partId));
+    return p?.P_PartName || `#${partId}`;
+  };
+
+  const formatCurrency = (value) => {
+    const num = parseFloat(value || 0);
+    if (isNaN(num)) return 'Rs 0.00';
+    return `Rs ${num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+  };
+
+  useEffect(() => {
+    dispatch(GetAllJobCards());
+    dispatch(GetAllJobCardItems());
+    fetchLists();
+    // auto-open edit modal when query param exists (admin redirect)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const edit = params.get('edit');
+      if (edit) {
+        // slight delay to ensure lists loaded
+        setTimeout(() => openEditForBooking(edit), 300);
+      }
+    } catch (e) {}
+  }, [dispatch]);
+
+  const fetchLists = async () => {
+    try {
+      const s = await fetchAllServices();
+      if (s?.StatusCode === 200) setServicesList(s.ResultSet || []);
+    } catch (e) {}
+    try {
+      const p = await fetchAllParts();
+      if (p?.StatusCode === 200) setPartsList(p.ResultSet || []);
+    } catch (e) {}
+  };
+
+  const openEditForBooking = async (bookingId) => {
+    setCurrentBookingId(bookingId);
+    // load existing services selection stored under localStorage or from jobCards
+    try {
+      const stored = localStorage.getItem(`jobcard_selected_services_${bookingId}`);
+      if (stored) setSelectedServices(JSON.parse(stored));
+    } catch (e) {}
+
+    // load parts for booking
+    try {
+      const resp = await getBookingPartsByBookingID(String(bookingId));
+      if (resp?.StatusCode === 200) {
+        const rows = (resp.ResultSet || []).map(bp => ({ partId: String(bp.PartID || bp.P_PartID || bp.PartId || ''), qty: parseInt(bp.Quantity || bp.Qty || 1, 10) || 1, unitPrice: parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.J_Charge || 0) || 0 }));
+        setSelectedPartsRows(rows);
+      } else {
+        setSelectedPartsRows([]);
+      }
+    } catch (e) {
+      setSelectedPartsRows([]);
+    }
+
+    setModalOpen(true);
+  };
+
+  // when jobCards change, fetch booking-specific parts like admin page does
+  useEffect(() => {
+    const fetchAllBookingParts = async () => {
+      if (!Array.isArray(jobCards) || jobCards.length === 0) return;
+      const map = {};
+      for (const jc of jobCards) {
+        try {
+          const resp = await getBookingPartsByBookingID(jc.J_BookingID);
+          if (resp?.StatusCode === 200) {
+            map[jc.J_BookingID] = resp.ResultSet || [];
+          } else {
+            map[jc.J_BookingID] = [];
+          }
+        } catch (err) {
+          map[jc.J_BookingID] = [];
+        }
+      }
+      setBookingPartsMap(map);
+    };
+
+    fetchAllBookingParts();
+  }, [jobCards]);
+
+  const toggleService = (id) => {
+    setSelectedServices(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    if (!currentBookingId) return;
+    setLoadingSubmit(true);
+    try {
+      // Update booking services
+      const newServiceIds = (selectedServices || []).map(id => parseInt(id, 10)).filter(Boolean);
+  // only show job cards that are In Progress (sent by admin)
+  const inProgressJobCards = (jobCards || []).filter(jc => String(jc.J_JobCardStatus || '').toLowerCase() === 'in progress');
+
+      if (newServiceIds.length > 0) {
+        await updateBookingServices({ J_BookingID: String(currentBookingId), NewServiceIDs: newServiceIds });
+        // remove temp storage
+        try { localStorage.removeItem(`jobcard_selected_services_${currentBookingId}`); } catch(e){}
+      }
+
+      // Update booking parts
+      const partsPayload = (selectedPartsRows || []).map(p => ({ PartID: parseInt(p.partId || 0, 10) || 0, Quantity: parseInt(p.qty || 0, 10) || 0 })).filter(p => p.PartID && p.Quantity);
+      if (partsPayload.length > 0) {
+        await addBookingParts({ J_BookingID: String(currentBookingId), PartsList: partsPayload });
+      }
+
+      // store totals via addJobCardService similar to admin flow
+      try {
+        const partsQty = (selectedPartsRows || []).reduce((s, r) => s + (parseInt(r.qty || 0, 10) || 0), 0);
+        const partsTotal = (selectedPartsRows || []).reduce((s, r) => s + ((parseFloat(r.unitPrice || 0) || 0) * (parseInt(r.qty || 0, 10) || 0)), 0);
+        const svcTotal = (selectedServices || []).reduce((s, id) => {
+          const svc = servicesList.find(x => String(x.S_ServiceID) === String(id));
+          return s + (parseFloat(svc?.S_BaseCharge || 0) || 0);
+        }, 0);
+        const grandTotal = svcTotal + partsTotal;
+        const respAdd = await addJobCardService({ J_BookingID: String(currentBookingId), J_CreatedDate: dayjs().format('YYYY-MM-DD'), J_Technician: '', J_JobCardStatus: 'In Progress', Quantity: partsQty, Price: parseFloat(grandTotal.toFixed(2)) });
+        // update local totals cache so table shows new totals immediately
+        try {
+          setTotalsMap(prev => ({ ...prev, [String(currentBookingId)]: { Quantity: partsQty, Price: parseFloat(grandTotal.toFixed(2)), J_JobCardStatus: 'In Progress' } }));
+        } catch (e) {}
+      } catch (e) {
+        // non-blocking
+      }
+
+      alert('Updates saved. Admin can complete the job when finished.');
+      setModalOpen(false);
+      dispatch(GetAllJobCards());
+      dispatch(GetAllJobCardItems());
+    } catch (err) {
+      console.error(err);
+      alert('Failed to save changes');
+    } finally {
+      setLoadingSubmit(false);
+    }
+  };
+
+  // Deduplicate jobCards similar to admin page so rows with totals are preferred
+  const dedupedJobCards = (() => {
+    if (!Array.isArray(jobCards) || jobCards.length === 0) return [];
+    const map = new Map();
+    for (const jc of jobCards) {
+      const key = String(jc.J_BookingID || jc.J_JobCardID || '');
+      if (!key) continue;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, jc);
+        continue;
+      }
+      const hasExistingTotals = (existing.Price !== undefined && existing.Price !== null && String(existing.Price).trim() !== '') || (existing.Quantity !== undefined && existing.Quantity !== null && String(existing.Quantity).trim() !== '');
+      const hasNewTotals = (jc.Price !== undefined && jc.Price !== null && String(jc.Price).trim() !== '') || (jc.Quantity !== undefined && jc.Quantity !== null && String(jc.Quantity).trim() !== '');
+      if (hasNewTotals && !hasExistingTotals) {
+        map.set(key, jc);
+      } else if (hasNewTotals === hasExistingTotals) {
+        try {
+          const a = parseInt(existing.J_JobCardID || 0, 10) || 0;
+          const b = parseInt(jc.J_JobCardID || 0, 10) || 0;
+          if (b >= a) map.set(key, jc);
+        } catch (e) {
+          map.set(key, jc);
+        }
+      }
+    }
+    return Array.from(map.values());
+  })();
+
+  // Filters: only In Progress job cards for supervisors and search term
+  const filteredJobCards = dedupedJobCards && dedupedJobCards.length > 0
+    ? dedupedJobCards.filter(jobCard => {
+      // show only In Progress
+      if (String(jobCard.J_JobCardStatus || '').toLowerCase() !== 'in progress') return false;
+      const term = String(searchTerm || '').toLowerCase();
+      if (!term) return true;
+      const bookingId = String(jobCard.J_BookingID || '').toLowerCase();
+      const technician = String(jobCard.J_Technician || '').toLowerCase();
+      const status = String(jobCard.J_JobCardStatus || '').toLowerCase();
+      const services = String(jobCard.ServiceNames || '').toLowerCase();
+      const itemsForCard = Array.isArray(jobCardItems) ? jobCardItems.filter(it => String(it.J_JobCardID) === String(jobCard.J_JobCardID)) : [];
+      const partsString = itemsForCard.map(it => {
+        const part = partsList.find(p => String(p?.P_PartID) === String(it.J_PartID));
+        return part?.P_PartName || String(it.J_PartID || '');
+      }).join(', ').toLowerCase();
+
+      return (
+        bookingId.includes(term) ||
+        technician.includes(term) ||
+        status.includes(term) ||
+        services.includes(term) ||
+        partsString.includes(term)
+      );
+    })
+    : [];
+
+  // Calculate job card stats (show totals for all jobCards, not just filtered)
+  const totalJobCards = jobCards?.length || 0;
+  const pendingJobs = jobCards?.filter(jobCard => String(jobCard.J_JobCardStatus) === 'Pending').length || 0;
+  const inProgressJobs = jobCards?.filter(jobCard => String(jobCard.J_JobCardStatus) === 'In Progress').length || 0;
+  const completedJobs = jobCards?.filter(jobCard => String(jobCard.J_JobCardStatus) === 'Completed').length || 0;
+
+  const jobCardStats = {
+    totalJobCards,
+    pendingJobs,
+    inProgressJobs,
+    completedJobs
+  };
+
+  const StatCard = ({ title, value, icon, color, progress }) => (
+    <div className="stat-card bg-white rounded-2xl shadow-lg border-0 p-4 hover:shadow-xl transition-all duration-300">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs font-medium text-gray-500 mb-1">{title}</div>
+          <div className="text-xl font-bold text-gray-900">{value}</div>
+          {progress !== undefined && (
+            <div className="mt-1 w-full bg-gray-200 rounded-full h-1">
+              <div
+                className={`h-1 rounded-full ${color}`}
+                style={{ width: `${Math.round((value / Math.max(jobCardStats.totalJobCards, 1)) * 100)}%` }}
+              ></div>
+            </div>
+          )}
+        </div>
+        <div className={`p-2 rounded-full ${color} bg-opacity-10`}>
+          {React.cloneElement(icon, {
+            className: `text-lg ${color}`
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <DashboardLayout>
+      <div className="h-full p-4 md:p-6">
+        <div className="w-full space-y-6">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl shadow-lg text-white p-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-white mb-2">Supervisor Job Cards</h1>
+                <p className="text-blue-100">Manage assigned job cards in progress</p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => { dispatch(GetAllJobCards()); dispatch(GetAllJobCardItems()); fetchLists(); }}
+                  className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-0 rounded-lg h-10 px-4 font-medium backdrop-blur-sm flex items-center"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <StatCard title="Total Job Cards" value={jobCardStats.totalJobCards} icon={<ClipboardList className="text-blue-600" />} color="text-blue-600" progress />
+            <StatCard title="Pending Jobs" value={jobCardStats.pendingJobs} icon={<Calendar className="text-amber-600" />} color="text-amber-600" progress />
+            <StatCard title="In Progress" value={jobCardStats.inProgressJobs} icon={<User className="text-orange-600" />} color="text-orange-600" progress />
+            <StatCard title="Completed Jobs" value={jobCardStats.completedJobs} icon={<Tag className="text-green-600" />} color="text-green-600" progress />
+          </div>
+
+          {/* Filters & Search */}
+          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+              <div className="flex items-center">
+                <Filter className="text-blue-600 text-base mr-2" />
+                <span className="text-base font-semibold text-gray-900">Filters & Search</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="relative md:col-span-2">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <input
+                  type="text"
+                  placeholder="Search by booking ID, technician, or status..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                />
+              </div>
+            </div>
+
+            <div className="mt-2">
+              <span className="text-sm text-gray-600">Showing {filteredJobCards.length} of {jobCardStats.totalJobCards} job cards</span>
+            </div>
+          </div>
+
+          {/* Job Cards Table */}
+          <div className="bg-white rounded-2xl shadow-lg border-0 overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold text-gray-900">Job Cards List</h3>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {filteredJobCards.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-300">
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Job Card ID</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Booking ID</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Created Date</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Technician</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Services</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Parts</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Qty</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Price</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Status</th>
+                        <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredJobCards.map((jobCard) => (
+                        <tr key={jobCard.J_JobCardID} className="border-b border-gray-200 hover:bg-blue-50 transition-colors duration-200">
+                          <td className="py-4 px-4 text-base font-medium text-gray-900">
+                            <div className="font-medium">JC-{String(jobCard.J_JobCardID).padStart(4, '0')}</div>
+                            <div className="text-xs text-gray-400">Booking: {jobCard.J_BookingID}</div>
+                          </td>
+                          <td className="py-4 px-4 text-base text-gray-700">{jobCard.J_BookingID}</td>
+                          <td className="py-4 px-4 text-base text-gray-700">{new Date(jobCard.J_CreatedDate).toLocaleDateString()}</td>
+                          <td className="py-4 px-4 text-base text-gray-700">{jobCard.J_Technician || 'Unassigned'}</td>
+                          <td className="py-4 px-4 align-top">
+                            <div className="flex flex-col gap-2 max-w-xs">
+                              {(String(jobCard.ServiceNames || '').split(',').map(s => s.trim()).filter(Boolean)).map((svc, idx) => (
+                                <div key={idx} className="flex items-center justify-start gap-3">
+                                  <span className="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-gray-50 text-gray-800 border border-gray-100 shadow-sm truncate">{svc}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+
+                          {/* Parts aggregation (use bookingPartsMap or jobCardItems) */}
+                          {(() => {
+                            const bookingParts = bookingPartsMap[jobCard.J_BookingID] || [];
+                            const totalsOverride = totalsMap[String(jobCard.J_BookingID || jobCard.J_JobCardID || '')];
+                            const hasBackendTotals = totalsOverride || (jobCard.Quantity !== undefined && jobCard.Quantity !== null && String(jobCard.Quantity).trim() !== '') || (jobCard.Price !== undefined && jobCard.Price !== null && String(jobCard.Price).trim() !== '');
+                            const overrideQtyVal = totalsOverride?.Quantity ?? ((jobCard.Quantity !== undefined && jobCard.Quantity !== null && String(jobCard.Quantity).trim() !== '') ? (parseInt(jobCard.Quantity, 10) || 0) : null);
+                            const overridePriceVal = totalsOverride?.Price ?? ((jobCard.Price !== undefined && jobCard.Price !== null && String(jobCard.Price).trim() !== '') ? (parseFloat(jobCard.Price) || 0) : null);
+                            if (Array.isArray(bookingParts) && bookingParts.length > 0) {
+                              const agg = {};
+                              for (const bp of bookingParts) {
+                                const pid = String(bp.PartID || bp.P_PartID || bp.PartId || bp.PARTID || '') || '';
+                                if (!pid) continue;
+                                const name = bp.PartName || bp.P_PartName || (() => { const p = partsList.find(x => String(x?.P_PartID) === pid); return p?.P_PartName || `#${pid}`; })();
+                                const qty = parseInt(bp.Quantity || bp.Qty || 0, 10) || 0;
+                                const unit = parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.P_UnitPrice || 0) || 0;
+                                const total = parseFloat(bp.TotalPrice || (unit * qty) || 0) || 0;
+                                if (!agg[pid]) {
+                                  agg[pid] = { partId: pid, name, qty: 0, unit, totalPrice: 0 };
+                                }
+                                agg[pid].qty += qty;
+                                agg[pid].totalPrice += total || (unit * qty);
+                                if (!agg[pid].unit && unit) agg[pid].unit = unit;
+                              }
+
+                              const uniqueParts = Object.values(agg);
+                              const totalQty = uniqueParts.reduce((s, p) => s + (p.qty || 0), 0);
+                              const totalPrice = uniqueParts.reduce((s, p) => s + (parseFloat(p.totalPrice || 0) || 0), 0);
+
+                              const displayQty = overrideQtyVal !== null ? overrideQtyVal : totalQty;
+                              const displayPrice = overridePriceVal !== null ? overridePriceVal : totalPrice;
+
+                              return (
+                                <>
+                                  <td className="py-4 px-4 align-top">
+                                    <div className="flex flex-col gap-2" title={uniqueParts.map(p => `${p.name} x${p.qty} (${formatCurrency(p.totalPrice)})`).join(', ')}>
+                                      {uniqueParts.map(p => (
+                                        <div key={p.partId} className="flex items-center justify-between">
+                                          <div className="flex items-center gap-3">
+                                            <span className="text-sm font-medium text-gray-800">{p.name}</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-4"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">{displayQty}</span></td>
+                                  <td className="py-4 px-4"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">{formatCurrency(displayPrice)}</span></td>
+                                </>
+                              );
+                            }
+
+                            // fallback to jobCardItems aggregation
+                            const itemsForCard = Array.isArray(jobCardItems) ? jobCardItems.filter(it => String(it.J_JobCardID) === String(jobCard.J_JobCardID)) : [];
+                            const aggItems = {};
+                            for (const it of itemsForCard) {
+                              const pid = String(it.J_PartID || it.PartID || '') || '';
+                              if (!pid) continue;
+                              const name = getPartName(pid) || `#${pid}`;
+                              const qty = parseInt(it.J_Qty || it.Quantity || 0, 10) || 0;
+                              const unit = parseFloat(it.J_Charge || it.UnitPrice || 0) || 0;
+                              const total = parseFloat((unit * qty) || 0) || 0;
+                              if (!aggItems[pid]) aggItems[pid] = { partId: pid, name, qty: 0, unit, totalPrice: 0 };
+                              aggItems[pid].qty += qty;
+                              aggItems[pid].totalPrice += total;
+                            }
+
+                            const uniqueItems = Object.values(aggItems);
+                            const totalQtyItems = uniqueItems.reduce((s, p) => s + (p.qty || 0), 0);
+                            const totalPriceItems = uniqueItems.reduce((s, p) => s + (parseFloat(p.totalPrice || 0) || 0), 0);
+                            const displayQtyItems = overrideQtyVal !== null ? overrideQtyVal : totalQtyItems;
+                            const displayPriceItems = overridePriceVal !== null ? overridePriceVal : totalPriceItems;
+
+                            if (uniqueItems.length === 0 && overrideQtyVal === null && overridePriceVal === null) {
+                              return (
+                                <>
+                                  <td className="py-4 px-4"><span className="text-sm text-gray-500">-</span></td>
+                                  <td className="py-4 px-4"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">0</span></td>
+                                  <td className="py-4 px-4"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">{formatCurrency(0)}</span></td>
+                                </>
+                              );
+                            }
+
+                            return (
+                              <>
+                                <td className="py-4 px-4 align-top">
+                                  <div className="flex flex-col gap-2" title={uniqueItems.map(p => `${p.name} x${p.qty} (${formatCurrency(p.totalPrice)})`).join(', ')}>
+                                    {uniqueItems.map(p => (
+                                      <div key={p.partId} className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                          <span className="text-sm font-medium text-gray-800">{p.name}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td className="py-4 px-4"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">{displayQtyItems}</span></td>
+                                <td className="py-4 px-4"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">{formatCurrency(displayPriceItems)}</span></td>
+                              </>
+                            );
+                          })()}
+
+                          <td className="py-4 px-4">
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${jobCard.J_JobCardStatus === 'Completed' ? 'bg-green-100 text-green-800' : jobCard.J_JobCardStatus === 'In Progress' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {jobCard.J_JobCardStatus}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="flex items-center space-x-2">
+                              <button onClick={() => openEditForBooking(jobCard.J_BookingID)} className="text-blue-600 hover:text-blue-800 p-2 rounded-lg hover:bg-blue-100 transition-colors" title="Edit job card"><Edit3 className="h-4 w-4" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <ClipboardList className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-600 text-base font-medium">No job cards found</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {modalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-6">
+            <div className="bg-white w-full max-w-4xl rounded-lg shadow-2xl overflow-auto max-h-[90vh] border border-gray-200">
+              <form onSubmit={onSubmit} className="p-6 space-y-6">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="text-2xl font-semibold">Edit Job Card - Booking {currentBookingId}</h2>
+                    <p className="text-sm text-gray-500">Edit services and parts below. You cannot change job status here.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => setModalOpen(false)} className="text-gray-500 hover:text-gray-700">Close</button>
+                  </div>
+                </div>
+
+                {/* Services panel */}
+                <div className="border border-gray-200 rounded-xl p-4 bg-white">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-semibold text-gray-800">Services</h4>
+                    <div className="text-sm text-gray-500">{servicesList.length} available</div>
+                  </div>
+
+                  <div className="flex items-center gap-3 mb-3">
+                    <Search className="text-gray-400 h-5 w-5" />
+                    <input value={serviceFilter} onChange={(e)=>setServiceFilter(e.target.value)} placeholder="Search services..." className="flex-1 px-3 py-2 border border-gray-200 rounded-md text-sm" />
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-52 overflow-y-auto pr-2">
+                    {servicesList.filter(s => String(s.S_ServiceName||'').toLowerCase().includes(serviceFilter.toLowerCase())).map(s => (
+                      <label key={s.S_ServiceID} className={`flex items-start gap-3 p-3 rounded-lg border transition ${selectedServices.includes(String(s.S_ServiceID)) ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white hover:bg-gray-50 border-gray-100'}`}>
+                        <input type="checkbox" className="mt-1" checked={selectedServices.includes(String(s.S_ServiceID))} onChange={() => toggleService(String(s.S_ServiceID))} />
+                        <div className="text-sm">
+                          <div className="font-medium text-gray-800">{s.S_ServiceName}</div>
+                          <div className="text-xs text-gray-500">Rs {parseFloat(s.S_BaseCharge||0).toFixed(2)}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {(selectedServices || []).map(id => {
+                      const svc = servicesList.find(x => String(x.S_ServiceID) === String(id));
+                      return (
+                        <span key={id} className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 border border-blue-200 text-sm">
+                          {svc?.S_ServiceName || `#${id}`} <span className="ml-2 text-xs text-gray-600">Rs {parseFloat(svc?.S_BaseCharge||0).toFixed(2)}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 text-sm font-semibold text-gray-700">Services Total: <span className="text-green-700">{(() => { const total = (selectedServices||[]).reduce((sum,id)=>{ const svc=servicesList.find(x=>String(x.S_ServiceID)===String(id)); return sum + (parseFloat(svc?.S_BaseCharge||0)||0); },0); return `Rs ${total.toFixed(2)}` })()}</span></div>
+                </div>
+
+                {/* Parts panel */}
+                <div className="border border-gray-200 rounded-xl p-4 bg-white">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-semibold text-gray-800">Parts</h4>
+                    <div className="text-sm text-gray-500">{partsList.length} available</div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {selectedPartsRows.map((row, idx) => (
+                      <div key={idx} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-white">
+                        <Package className="text-green-500 h-5 w-5" />
+                        <div className="flex-1 grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-6">
+                            <select value={row.partId} onChange={(e)=>{ const partId=e.target.value; const part=partsList.find(p=>String(p.P_PartID)===String(partId)); const unit = part ? (part.P_UnitPrice||part.P_PartPrice||part.P_PartPrice) : 0; setSelectedPartsRows(prev=>prev.map((r,i)=> i===idx?{...r, partId, unitPrice: unit}:r)); }} className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white">
+                              <option value="">Select part</option>
+                              {partsList.map(p=> (
+                                <option key={p.P_PartID} value={p.P_PartID}>{p.P_PartName} — Rs {parseFloat(p.P_UnitPrice||p.P_PartPrice||0).toFixed(2)}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="col-span-2">
+                            <input type="number" min="1" value={row.qty} onChange={(e)=>{ const q=parseInt(e.target.value||0,10)||0; setSelectedPartsRows(prev=>prev.map((r,i)=> i===idx?{...r, qty:q}:r)); }} className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm" />
+                          </div>
+
+                          <div className="col-span-3 text-sm">
+                            <div className="text-xs text-gray-500">Unit</div>
+                            <div className="font-medium">{row.unitPrice?`Rs ${parseFloat(row.unitPrice).toFixed(2)}`:'-'}</div>
+                          </div>
+
+                          <div className="col-span-1 text-right">
+                            <div className="text-xs text-gray-500">Line</div>
+                            <div className="font-medium">{row.unitPrice?`Rs ${(parseFloat(row.unitPrice||0)*(parseInt(row.qty||0,10)||0)).toFixed(2)}`:'Rs 0.00'}</div>
+                          </div>
+                        </div>
+
+                        <div className="w-12 text-right">
+                          <button type="button" onClick={()=> setSelectedPartsRows(prev=>prev.filter((_,i)=>i!==idx))} className="text-red-500 px-2 py-1 rounded-md hover:bg-red-50">Remove</button>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div>
+                      <button type="button" onClick={()=> setSelectedPartsRows(prev=>[...prev,{partId:'',qty:1,unitPrice:0}])} className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-md border border-green-200 text-sm">
+                        <Plus className="h-4 w-4" /> Add Part
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 text-sm font-semibold text-gray-700">Parts Total: <span className="text-green-700">{(() => { const total = selectedPartsRows.reduce((s,r)=> s + ((parseFloat(r.unitPrice||0)||0)*(parseInt(r.qty||0,10)||0)),0); return `Rs ${total.toFixed(2)}` })()}</span></div>
+                </div>
+
+                <div className="mt-4 text-right bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                  <div className="text-base font-bold text-gray-800">Grand Total: <span className="text-2xl text-indigo-700">{(() => { const svcTotal = (selectedServices||[]).reduce((s,id)=>{ const svc=servicesList.find(x=>String(x.S_ServiceID)===String(id)); return s + (parseFloat(svc?.S_BaseCharge||0)||0); },0); const partsTotal = selectedPartsRows.reduce((s,r)=> s + ((parseFloat(r.unitPrice||0)||0)*(parseInt(r.qty||0,10)||0)),0); return `Rs ${(svcTotal+partsTotal).toFixed(2)}` })()}</span></div>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => setModalOpen(false)} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">Cancel</button>
+                  <button type="submit" disabled={loadingSubmit} className="px-6 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg shadow-md">{loadingSubmit? 'Saving...' : 'Update Job Card'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+};
+
+export default SupervisorJobCards;
