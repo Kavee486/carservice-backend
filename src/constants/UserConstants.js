@@ -1,0 +1,41 @@
+// UserConstants.js
+export const USER_ROLES = {
+  CUSTOMER: 1,
+  ADMIN: 2,
+  TECHNICIAN: 3
+};
+
+export const ROUTES = {
+  ADMIN: '/admin',
+  TECHNICIAN: '/technician',
+  CUSTOMER: '/customer',
+  LOGIN: '/login',
+  HOME: '/'
+};
+
+export const COMPANY_INFO = {
+  NAME: 'AutoCare'
+};
+
+// User Action Types
+export const SIGNUP_REQUEST = 'SIGNUP_REQUEST';
+export const SIGNUP_SUCCESS = 'SIGNUP_SUCCESS';
+export const SIGNUP_FAIL = 'SIGNUP_FAIL';
+export const SIGNUP_RESET = 'SIGNUP_RESET';
+
+export const GET_ADMINS_REQUEST = 'GET_ADMINS_REQUEST';
+export const GET_ADMINS_SUCCESS = 'GET_ADMINS_SUCCESS';
+export const GET_ADMINS_FAIL = 'GET_ADMINS_FAIL';
+
+export const GET_TECHNICIANS_REQUEST = 'GET_TECHNICIANS_REQUEST';
+export const GET_TECHNICIANS_SUCCESS = 'GET_TECHNICIANS_SUCCESS';
+export const GET_TECHNICIANS_FAIL = 'GET_TECHNICIANS_FAIL';
+
+
+export const UPDATE_USER_REQUEST = 'UPDATE_USER_REQUEST';
+export const UPDATE_USER_SUCCESS = 'UPDATE_USER_SUCCESS';
+export const UPDATE_USER_FAIL = 'UPDATE_USER_FAIL';
+
+export const DEACTIVATE_USER_REQUEST = 'DEACTIVATE_USER_REQUEST';
+export const DEACTIVATE_USER_SUCCESS = 'DEACTIVATE_USER_SUCCESS';
+export const DEACTIVATE_USER_FAIL = 'DEACTIVATE_USER_FAIL';
