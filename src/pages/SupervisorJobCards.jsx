@@ -249,8 +249,8 @@ const SupervisorJobCards = () => {
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!currentBookingId) return;
-    // Require supervisor to mark job as Completed before submitting
-    if (String(selectedStatus).toLowerCase() !== 'completed') {
+    // Require supervisor to mark job as Job Done before submitting
+    if (String(selectedStatus).toLowerCase() !== 'job done') {
       alert('Please set Status to "Job Done" before updating the job card.');
       return;
     }
@@ -777,9 +777,9 @@ const SupervisorJobCards = () => {
                     <button type="button" onClick={() => setModalOpen(false)} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">Cancel</button>
                     <button
                       type="submit"
-                      disabled={loadingSubmit || String(selectedStatus).toLowerCase() !== 'completed'}
-                      title={String(selectedStatus).toLowerCase() !== 'completed' ? 'Set Status to Job Done to enable update' : ''}
-                      className={`px-6 py-2 text-white rounded-lg shadow-md ${loadingSubmit || String(selectedStatus).toLowerCase() !== 'completed' ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-blue-500 to-indigo-600'}`}
+                      disabled={loadingSubmit || String(selectedStatus).toLowerCase() !== 'job done'}
+                        title={String(selectedStatus).toLowerCase() !== 'job done' ? 'Set Status to Job Done to enable update' : ''}
+                        className={`px-6 py-2 text-white rounded-lg shadow-md ${loadingSubmit || String(selectedStatus).toLowerCase() !== 'job done' ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-blue-500 to-indigo-600'}`}
                     >
                       {loadingSubmit ? 'Saving...' : 'Update Job Card'}
                     </button>
