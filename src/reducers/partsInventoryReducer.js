@@ -29,7 +29,12 @@ export const partsInventoryReducer = (state = initialState, action) => {
       return { ...state, loading: true, error: null };
     
     case GET_ALL_PARTS_INVENTORY_SUCCESS:
-      return { ...state, loading: false, parts: action.payload, error: null };
+      return { 
+        ...state, 
+        loading: false, 
+        parts: action.payload.ResultSet || [], // FIX: Extract ResultSet from payload
+        error: null 
+      };
     
     case GET_ALL_PARTS_INVENTORY_FAIL:
       return { ...state, loading: false, error: action.payload };
@@ -39,8 +44,6 @@ export const partsInventoryReducer = (state = initialState, action) => {
       return { ...state, loading: true, error: null };
     
     case ADD_PART_INVENTORY_SUCCESS:
-      // The Add action triggers a refetch (GetAllPartsInventory()), so we don't append a possibly
-      // malformed payload here. Just clear loading and keep current parts until the refetch finishes.
       return { 
         ...state, 
         loading: false,
@@ -55,7 +58,6 @@ export const partsInventoryReducer = (state = initialState, action) => {
       return { ...state, loading: true, error: null };
     
     case UPDATE_PART_INVENTORY_SUCCESS:
-      // Update action also triggers a refetch. Avoid relying on action.payload shape here.
       return {
         ...state,
         loading: false,
@@ -65,19 +67,14 @@ export const partsInventoryReducer = (state = initialState, action) => {
     case UPDATE_PART_INVENTORY_FAIL:
       return { ...state, loading: false, error: action.payload };
 
-    // Delete a part from the inventory (now just updates status)
+    // Delete a part from the inventory
     case DELETE_PART_INVENTORY_REQUEST:
       return { ...state, loading: true, error: null };
 
     case DELETE_PART_INVENTORY_SUCCESS:
-      // Find the part and update its status to 'I' (inactive)
-      const filteredParts = state.parts.map(part => 
-        part.P_PartID === action.payload ? {...part, P_Status: 'I'} : part
-      );
       return {
         ...state,
         loading: false,
-        parts: filteredParts,
         error: null
       };
 

@@ -11,13 +11,17 @@ import {
   UpdateJobCard_FAIL,
   DeleteJobCard_REQUEST,
   DeleteJobCard_SUCCESS,
-  DeleteJobCard_FAIL
+  DeleteJobCard_FAIL,
+  GetAllTechnicians_REQUEST,
+  GetAllTechnicians_SUCCESS,
+  GetAllTechnicians_FAIL
 } from "../constants/JobCardConstants";
 import {
   fetchAllJobCards,
   addJobCard,
   updateJobCard,
-  deleteJobCard
+  deleteJobCard,
+  fetchAllTechnicians
 } from '../services/jobCardServices';
 
 // Action to get all job cards
@@ -43,6 +47,34 @@ export const GetAllJobCards = () => async (dispatch) => {
     const message = error.response?.data?.message || error.message || error.toString();
     dispatch({
       type: GetAllJobCards_FAIL,
+      payload: message
+    });
+  }
+};
+
+// Action to get all technicians
+export const GetAllTechnicians = () => async (dispatch) => {
+  try {
+    dispatch({ type: GetAllTechnicians_REQUEST });
+
+    const data = await fetchAllTechnicians();
+
+    if (data.StatusCode === 200) {
+      dispatch({
+        type: GetAllTechnicians_SUCCESS,
+        payload: data.ResultSet
+      });
+    } else {
+      const msg = data.Message || "Failed to fetch technicians";
+      dispatch({
+        type: GetAllTechnicians_FAIL,
+        payload: msg
+      });
+    }
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || error.toString();
+    dispatch({
+      type: GetAllTechnicians_FAIL,
       payload: message
     });
   }

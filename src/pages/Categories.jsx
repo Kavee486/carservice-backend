@@ -174,8 +174,7 @@ const Categories = () => {
   const filteredCategories = categories && categories.length > 0
     ? categories.filter(category => {
       const matchesSearch =
-        category.C_CategoryName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        category.C_CategoryID?.toString().includes(searchTerm);
+        category.C_CategoryName?.toLowerCase().includes(searchTerm.toLowerCase());
 
       return matchesSearch;
     })
@@ -240,22 +239,8 @@ const Categories = () => {
               <Text strong className="text-lg font-semibold text-gray-900 block">
                 {record.C_CategoryName || 'Unknown Category'}
               </Text>
-              <Text className="text-sm text-gray-500">#{record.C_CategoryID}</Text>
             </div>
           </div>
-          <Tag 
-            color="#52c41a" 
-            icon={<CheckCircleOutlined />}
-            style={{ 
-              backgroundColor: '#f6ffed', 
-              borderColor: '#52c41a',
-              color: '#52c41a',
-              borderRadius: '12px',
-              fontWeight: '600'
-            }}
-          >
-            ACTIVE
-          </Tag>
         </div>
 
         <Divider className="my-3" />
@@ -298,12 +283,8 @@ const Categories = () => {
           <div className="mt-4 pt-4 border-t border-gray-100">
             <div className="space-y-3">
               <div className="flex justify-between">
-                <Text strong className="text-sm text-gray-700">Category ID:</Text>
-                <Text className="text-sm text-gray-600">#{record.C_CategoryID}</Text>
-              </div>
-              <div className="flex justify-between">
-                <Text strong className="text-sm text-gray-700">Status:</Text>
-                <Text className="text-sm text-gray-600">Active</Text>
+                <Text strong className="text-sm text-gray-700">Category Name:</Text>
+                <Text className="text-sm text-gray-600">{record.C_CategoryName}</Text>
               </div>
             </div>
           </div>
@@ -314,44 +295,16 @@ const Categories = () => {
 
   const columns = [
     {
-      title: <span className="text-sm font-semibold text-gray-700">Category ID</span>,
-      dataIndex: 'C_CategoryID',
-      key: 'C_CategoryID',
-      render: (text) => (
-        <div className="flex items-center">
-          <Avatar size="small" icon={<FolderOutlined />} className="bg-blue-100 text-blue-600 mr-2" />
-          <Text strong className="text-base font-semibold text-gray-900">#{text}</Text>
-        </div>
-      ),
-      width: 120,
-    },
-    {
       title: <span className="text-sm font-semibold text-gray-700">Category Name</span>,
       dataIndex: 'C_CategoryName',
       key: 'C_CategoryName',
-      render: (text) => <Text className="text-base font-medium text-gray-800">{text || 'N/A'}</Text>,
-      width: 200,
-    },
-    {
-      title: <span className="text-sm font-semibold text-gray-700">Status</span>,
-      key: 'status',
-      width: 100,
-      render: (_, record) => (
-        <Tag 
-          color="#52c41a" 
-          icon={<CheckCircleOutlined />}
-          style={{ 
-            backgroundColor: '#f6ffed', 
-            borderColor: '#52c41a',
-            color: '#52c41a',
-            borderRadius: '12px',
-            fontWeight: '600',
-            border: 'none'
-          }}
-        >
-          ACTIVE
-        </Tag>
+      render: (text) => (
+        <div className="flex items-center">
+          <Avatar size="small" icon={<FolderOutlined />} className="bg-blue-100 text-blue-600 mr-2" />
+          <Text className="text-base font-medium text-gray-800">{text || 'N/A'}</Text>
+        </div>
       ),
+      width: 300,
     },
     {
       title: <span className="text-sm font-semibold text-gray-700">Actions</span>,
@@ -516,7 +469,7 @@ const Categories = () => {
               <SearchOutlined className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <input
                 type="text"
-                placeholder="Search categories by name or ID..."
+                placeholder="Search categories by name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
@@ -596,7 +549,7 @@ const Categories = () => {
                 size: 'default',
                 className: 'rounded-lg'
               }}
-              scroll={{ x: 800 }}
+              scroll={{ x: 600 }}
               className="rounded-lg custom-table"
               size="middle"
               rowClassName="hover:bg-blue-50 transition-colors duration-200"

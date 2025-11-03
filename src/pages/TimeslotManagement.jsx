@@ -75,9 +75,9 @@ const TimeslotManagement = () => {
         T_MaxCustomers: String(newTimeslot.maxCustomers)
       };
 
-  console.log('Posting payload to AddTimeslot:', payload);
-  const res = await timeslotService.addTimeslot(payload);
-  console.log('AddTimeslot response', res);
+      console.log('Posting payload to AddTimeslot:', payload);
+      const res = await timeslotService.addTimeslot(payload);
+      console.log('AddTimeslot response', res);
 
       // After successful add, refresh list
       await fetchTimeslots();
@@ -182,18 +182,35 @@ const TimeslotManagement = () => {
     return hh * 60 + mm;
   };
 
+  // Get date range for today to 2 weeks ahead (includes today)
+  const getTwoWeeksDateRange = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of today
+    
+    const twoWeeksLater = new Date();
+    twoWeeksLater.setDate(today.getDate() + 14);
+    twoWeeksLater.setHours(23, 59, 59, 999); // End of the day 2 weeks later
+    
+    return { start: today, end: twoWeeksLater };
+  };
+
+  // Check if a date is within today to 2 weeks ahead
+  const isDateWithinTwoWeeks = (dateString) => {
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const { start, end } = getTwoWeeksDateRange();
+    return date >= start && date <= end;
+  };
+
   // Only consider active timeslots for display and stats
   const activeTimeslots = timeslots.filter(t => String(t.status).toUpperCase() === 'A');
 
-  // Further filter to today's date only
-  const today = new Date();
-  const todaysActiveTimeslots = activeTimeslots.filter(t => {
-    if (!t.date) return false;
-    const d = new Date(t.date);
-    return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
-  });
+  // Filter to show only timeslots from today to 2 weeks ahead
+  const twoWeeksActiveTimeslots = activeTimeslots.filter(t => 
+    isDateWithinTwoWeeks(t.date)
+  );
 
-  const filteredTimeslots = todaysActiveTimeslots.filter((timeslot) => {
+  const filteredTimeslots = twoWeeksActiveTimeslots.filter((timeslot) => {
     // If searchTime provided, show slots that include that minute
     if (searchTime) {
       const searchMin = timeToMinutes(searchTime);
@@ -211,12 +228,61 @@ const TimeslotManagement = () => {
     );
   });
 
-  // Calculate statistics based on today's active timeslots only
-  const totalTimeslots = todaysActiveTimeslots.length;
-  const totalCapacity = todaysActiveTimeslots.reduce((total, timeslot) => total + (timeslot.maxCustomers || 0), 0);
-  const upcomingTimeslots = todaysActiveTimeslots.filter(timeslot => 
+  // Group timeslots by date for better organization
+  const groupTimeslotsByDate = (slots) => {
+    const grouped = {};
+    slots.forEach(slot => {
+      const dateKey = new Date(slot.date).toDateString();
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey].push(slot);
+    });
+    return grouped;
+  };
+
+  const groupedTimeslots = groupTimeslotsByDate(filteredTimeslots);
+
+  // Calculate statistics based on two weeks active timeslots
+  const totalTimeslots = twoWeeksActiveTimeslots.length;
+  const totalCapacity = twoWeeksActiveTimeslots.reduce((total, timeslot) => total + (timeslot.maxCustomers || 0), 0);
+  const upcomingTimeslots = twoWeeksActiveTimeslots.filter(timeslot => 
     timeslot.date && new Date(timeslot.date) >= new Date()
   ).length;
+
+  // Get today's timeslots count
+  const todaysTimeslots = twoWeeksActiveTimeslots.filter(timeslot => {
+    if (!timeslot.date) return false;
+    const today = new Date();
+    const slotDate = new Date(timeslot.date);
+    return (
+      slotDate.getFullYear() === today.getFullYear() &&
+      slotDate.getMonth() === today.getMonth() &&
+      slotDate.getDate() === today.getDate()
+    );
+  }).length;
+
+  // Get formatted date range for display
+  const getFormattedDateRange = () => {
+    const { start, end } = getTwoWeeksDateRange();
+    return {
+      start: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      end: end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    };
+  };
+
+  const dateRange = getFormattedDateRange();
+
+  // Check if a date is today
+  const isToday = (dateString) => {
+    const today = new Date();
+    const date = new Date(dateString);
+    return (
+      date.getFullYear() === today.getFullYear() &&
+      date.getMonth() === today.getMonth() &&
+      date.getDate() === today.getDate()
+    );
+  };
 
   return (
     <div className="h-full p-6">
@@ -226,7 +292,9 @@ const TimeslotManagement = () => {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-white mb-2">Timeslot Management</h1>
-              <p className="text-blue-100">Manage and schedule appointment timeslots efficiently</p>
+              <p className="text-blue-100">
+                Manage and schedule appointment timeslots for today and next 2 weeks ({dateRange.start} - {dateRange.end})
+              </p>
             </div>
             <div className="flex items-center space-x-2">
               <button
@@ -236,24 +304,30 @@ const TimeslotManagement = () => {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </button>
-              {/* <button
-                onClick={handleAddTimeslot}
-                className="bg-white text-blue-600 rounded-lg hover:bg-blue-50 h-10 px-4 font-medium flex items-center"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Timeslot
-              </button> */}
             </div>
           </div>
         </div>
 
         {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* Today's Timeslots Card */}
+          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-gray-500 mb-1">Today's Timeslots</div>
+                <div className="text-xl font-bold text-gray-900">{todaysTimeslots}</div>
+              </div>
+              <div className="p-2 rounded-full bg-orange-100 text-orange-600">
+                <Calendar className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+
           {/* Total Timeslots Card */}
           <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-gray-500 mb-1">Total Timeslots</div>
+                <div className="text-sm text-gray-500 mb-1">Total Timeslots (2 Weeks)</div>
                 <div className="text-xl font-bold text-gray-900">{totalTimeslots}</div>
               </div>
               <div className="p-2 rounded-full bg-blue-100 text-blue-600">
@@ -266,7 +340,7 @@ const TimeslotManagement = () => {
           <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-gray-500 mb-1">Total Capacity</div>
+                <div className="text-sm text-gray-500 mb-1">Total Capacity (2 Weeks)</div>
                 <div className="text-xl font-bold text-gray-900">{totalCapacity} Customers</div>
               </div>
               <div className="p-2 rounded-full bg-green-100 text-green-600">
@@ -303,6 +377,8 @@ const TimeslotManagement = () => {
                 name="date"
                 value={newTimeslot.date}
                 onChange={handleInputChange}
+                min={new Date().toISOString().split('T')[0]}
+                max={getTwoWeeksDateRange().end.toISOString().split('T')[0]}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                 required
               />
@@ -351,17 +427,17 @@ const TimeslotManagement = () => {
               />
             </div>
 
-     
+            <div className="flex items-end">
+              <button
+                onClick={handleAddTimeslot}
+                disabled={loading}
+                className={`w-full bg-blue-600 text-white px-6 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-base font-medium ${loading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-blue-700'}`}
+              >
+                <Plus className="w-4 h-4" />
+                {loading ? 'Adding...' : 'ADD TIMESLOT'}
+              </button>
+            </div>
           </div>
-
-          <button
-            onClick={handleAddTimeslot}
-            disabled={loading}
-            className={`bg-blue-600 text-white px-6 py-2 rounded-lg transition-colors flex items-center gap-2 text-base font-medium ${loading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-blue-700'}`}
-          >
-            <Plus className="w-4 h-4" />
-            {loading ? 'Adding...' : 'ADD TIMESLOT'}
-          </button>
         </div>
 
         {/* Search and Filters */}
@@ -374,16 +450,6 @@ const TimeslotManagement = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* <div className="relative md:col-span-2">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <input
-                type="text"
-                placeholder="Search by name or date..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
-              />
-            </div> */}
             <div className="flex items-center space-x-3">
               <label className="text-sm text-gray-600">Search by time</label>
               <input
@@ -404,7 +470,7 @@ const TimeslotManagement = () => {
 
           <div className="mt-2">
             <span className="text-sm text-gray-600">
-              Showing {filteredTimeslots.length} of {totalTimeslots} timeslots
+              Showing {filteredTimeslots.length} of {totalTimeslots} timeslots for today and next 2 weeks
             </span>
           </div>
         </div>
@@ -413,7 +479,9 @@ const TimeslotManagement = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-gray-900">Available Timeslots</h3>
+              <h3 className="text-xl font-semibold text-gray-900">
+                Available Timeslots (Today and Next 2 Weeks: {dateRange.start} - {dateRange.end})
+              </h3>
               <span className="text-gray-500">{totalTimeslots} timeslots found</span>
             </div>
           </div>
@@ -423,61 +491,66 @@ const TimeslotManagement = () => {
               <div className="text-center py-12 text-gray-600">Loading timeslots...</div>
             ) : error ? (
               <div className="text-center py-8 text-red-600">{error}</div>
-            ) : filteredTimeslots.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredTimeslots.map((timeslot) => (
-                  <div
-                    key={timeslot.id}
-                    className="border border-gray-200 rounded-xl p-4 bg-white hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center text-blue-600">
-                        <Clock className="w-4 h-4 mr-1" />
-                        <span className="font-semibold text-base">
-                          {formatTime(timeslot.startTime)} - {formatTime(timeslot.endTime)}
+            ) : Object.keys(groupedTimeslots).length > 0 ? (
+              <div className="space-y-8">
+                {Object.entries(groupedTimeslots)
+                  .sort(([dateA], [dateB]) => new Date(dateA) - new Date(dateB))
+                  .map(([date, slots]) => (
+                    <div key={date} className="border border-gray-200 rounded-xl p-6">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                        <Calendar className="w-5 h-5 mr-2 text-blue-600" />
+                        {formatDate(date)}
+                        {isToday(date) && (
+                          <span className="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full font-medium">
+                            Today
+                          </span>
+                        )}
+                        <span className="ml-2 text-sm font-normal text-gray-500">
+                          ({slots.length} timeslot{slots.length !== 1 ? 's' : ''})
                         </span>
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {slots.map((timeslot) => (
+                          <div
+                            key={timeslot.id}
+                            className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="flex items-center text-blue-600">
+                                <Clock className="w-4 h-4 mr-1" />
+                                <span className="font-semibold text-base">
+                                  {formatTime(timeslot.startTime)} - {formatTime(timeslot.endTime)}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteTimeslot(timeslot.id)}
+                                className="text-red-500 hover:text-red-700 transition-colors p-1 rounded-lg hover:bg-red-100"
+                                title="Delete timeslot"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex items-center text-gray-700">
+                                <Users className="w-4 h-4 mr-2 text-blue-600" />
+                                <span className="text-base">Max Customers: {timeslot.maxCustomers}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        onClick={() => handleDeleteTimeslot(timeslot.id)}
-                        className="text-red-500 hover:text-red-700 transition-colors p-1 rounded-lg hover:bg-red-100"
-                        title="Delete timeslot"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center text-gray-700">
-                        <Calendar className="w-4 h-4 mr-2 text-blue-600" />
-                        <span className="text-base">{formatDate(timeslot.date)}</span>
-                      </div>
-
-
-                      <div className="flex items-center text-gray-700">
-                        <Users className="w-4 h-4 mr-2 text-blue-600" />
-                        <span className="text-base">Max Customers: {timeslot.maxCustomers}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             ) : (
               <div className="text-center py-12">
                 <Calendar className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-600 text-base font-medium">
                   {timeslots && timeslots.length > 0
-                    ? 'No timeslots match your search criteria'
+                    ? 'No timeslots found for today and next 2 weeks'
                     : 'No timeslots found'}
                 </p>
-                {/* {(!timeslots || timeslots.length === 0) && (
-                  <button
-                    onClick={handleAddTimeslot}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-base font-medium flex items-center mx-auto mt-4"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Your First Timeslot
-                  </button>
-                )} */}
               </div>
             )}
           </div>

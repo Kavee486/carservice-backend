@@ -17,7 +17,10 @@ import {
     GET_ALL_USERS_FAIL,
     GET_DASHBOARD_STATS_REQUEST,
     GET_DASHBOARD_STATS_SUCCESS,
-    GET_DASHBOARD_STATS_FAIL
+    GET_DASHBOARD_STATS_FAIL,
+    GET_LATEST_BOOKINGS_REQUEST,
+    GET_LATEST_BOOKINGS_SUCCESS,
+    GET_LATEST_BOOKINGS_FAIL
 } from '../constants/AdminConstants';
 
 const initialState = {
@@ -49,6 +52,11 @@ const initialState = {
     dashboardStats: {
         loading: false,
         data: null,
+        error: null
+    },
+    latestBookings: {
+        loading: false,
+        data: [],
         error: null
     }
 };
@@ -225,6 +233,35 @@ export const adminReducer = (state = initialState, action) => {
                 dashboardStats: {
                     loading: false,
                     data: null,
+                    error: action.payload
+                }
+            };
+
+        // Latest Bookings
+        case GET_LATEST_BOOKINGS_REQUEST:
+            return {
+                ...state,
+                latestBookings: {
+                    loading: true,
+                    data: [],
+                    error: null
+                }
+            };
+        case GET_LATEST_BOOKINGS_SUCCESS:
+            return {
+                ...state,
+                latestBookings: {
+                    loading: false,
+                    data: action.payload,
+                    error: null
+                }
+            };
+        case GET_LATEST_BOOKINGS_FAIL:
+            return {
+                ...state,
+                latestBookings: {
+                    loading: false,
+                    data: [],
                     error: action.payload
                 }
             };

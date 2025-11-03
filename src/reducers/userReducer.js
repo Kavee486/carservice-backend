@@ -10,12 +10,21 @@ import {
   GET_TECHNICIANS_REQUEST,
   GET_TECHNICIANS_SUCCESS,
   GET_TECHNICIANS_FAIL,
+  GET_ALL_TECHNICIANS_REQUEST,
+  GET_ALL_TECHNICIANS_SUCCESS,
+  GET_ALL_TECHNICIANS_FAIL,
   UPDATE_USER_REQUEST,
   UPDATE_USER_SUCCESS,
   UPDATE_USER_FAIL,
+  UPDATE_TECHNICIAN_REQUEST,
+  UPDATE_TECHNICIAN_SUCCESS,
+  UPDATE_TECHNICIAN_FAIL,
   DEACTIVATE_USER_REQUEST,
   DEACTIVATE_USER_SUCCESS,
-  DEACTIVATE_USER_FAIL
+  DEACTIVATE_USER_FAIL,
+  DEACTIVATE_TECHNICIAN_REQUEST,
+  DEACTIVATE_TECHNICIAN_SUCCESS,
+  DEACTIVATE_TECHNICIAN_FAIL
 } from '../constants/userConstants';
 
 const initialState = {
@@ -29,6 +38,11 @@ const initialState = {
       error: null
     },
     technicians: {
+      loading: false,
+      data: null,
+      error: null
+    },
+    allTechnicians: {
       loading: false,
       data: null,
       error: null
@@ -132,6 +146,37 @@ export const userSignupReducer = (state = initialState.userSignup, action) => {
         }
       };
 
+    case GET_ALL_TECHNICIANS_REQUEST:
+      return {
+        ...state,
+        allTechnicians: {
+          ...state.allTechnicians,
+          loading: true,
+          error: null
+        }
+      };
+
+    case GET_ALL_TECHNICIANS_SUCCESS:
+      return {
+        ...state,
+        allTechnicians: {
+          ...state.allTechnicians,
+          loading: false,
+          data: action.payload,
+          error: null
+        }
+      };
+
+    case GET_ALL_TECHNICIANS_FAIL:
+      return {
+        ...state,
+        allTechnicians: {
+          ...state.allTechnicians,
+          loading: false,
+          error: action.payload
+        }
+      };
+
     case UPDATE_USER_REQUEST:
       return {
         ...state,
@@ -155,6 +200,29 @@ export const userSignupReducer = (state = initialState.userSignup, action) => {
         error: action.payload
       };
 
+    case UPDATE_TECHNICIAN_REQUEST:
+      return {
+        ...state,
+        loading: true,
+        error: null
+      };
+
+    case UPDATE_TECHNICIAN_SUCCESS:
+      return {
+        ...state,
+        loading: false,
+        success: true,
+        error: null
+      };
+
+    case UPDATE_TECHNICIAN_FAIL:
+      return {
+        ...state,
+        loading: false,
+        success: false,
+        error: action.payload
+      };
+
     case DEACTIVATE_USER_REQUEST:
       return {
         ...state,
@@ -171,6 +239,29 @@ export const userSignupReducer = (state = initialState.userSignup, action) => {
       };
 
     case DEACTIVATE_USER_FAIL:
+      return {
+        ...state,
+        loading: false,
+        success: false,
+        error: action.payload
+      };
+
+    case DEACTIVATE_TECHNICIAN_REQUEST:
+      return {
+        ...state,
+        loading: true,
+        error: null
+      };
+
+    case DEACTIVATE_TECHNICIAN_SUCCESS:
+      return {
+        ...state,
+        loading: false,
+        success: true,
+        error: null
+      };
+
+    case DEACTIVATE_TECHNICIAN_FAIL:
       return {
         ...state,
         loading: false,

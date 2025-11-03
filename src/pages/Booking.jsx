@@ -34,6 +34,11 @@ const Booking = () => {
   const [notes, setNotes] = useState('');
   const [booking, setBooking] = useState(false);
 
+  // New state for filtered bookings by status
+  const [filteredBookings, setFilteredBookings] = useState([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
+  const [showBookings, setShowBookings] = useState(true); // Show bookings by default
+
   useEffect(() => {
     loadServices();
     loadTimeslots();
@@ -105,6 +110,105 @@ const Booking = () => {
     // optionally re-filter is handled via derived availableTimeslots
   }, [selectedDate]);
 
+  // Function to load and filter bookings by status
+  const loadBookings = async () => {
+    try {
+      setLoadingBookings(true);
+      const res = await fetchAllBookings();
+      const rs = res?.ResultSet || res?.Result || [];
+      
+      // Process and filter bookings by status in order: Pending, Approved, Rejected
+      const processedBookings = (Array.isArray(rs) ? rs : [])
+        .map(booking => ({
+          id: booking.B_BookingID || booking.BookingID || booking.id,
+          customerName: booking.CustomerName || booking.customerName || 'Unknown Customer',
+          contact: booking.Contact || booking.Phone || booking.Mobile || 'N/A',
+          vehicle: booking.VehicleDetails || `${booking.V_Make || ''} ${booking.V_Model || ''}`.trim() || 'Unknown Vehicle',
+          services: booking.Services || booking.ServiceNames || 'General Service',
+          date: booking.B_BookingDate || booking.BookingDate || booking.createdDate,
+          time: booking.B_BookingTime || booking.TimeSlot || '',
+          status: booking.B_BookingStatus || booking.Status || 'Pending',
+          totalAmount: booking.TotalAmount || booking.Amount || '0'
+        }))
+        .filter(booking => booking.date) // Filter out bookings without dates
+        .sort((a, b) => {
+          // First sort by status: Pending -> Approved -> Rejected
+          const statusOrder = { 'pending': 1, 'approved': 2, 'rejected': 3 };
+          const aStatus = a.status.toLowerCase();
+          const bStatus = b.status.toLowerCase();
+          
+          if (statusOrder[aStatus] !== statusOrder[bStatus]) {
+            return statusOrder[aStatus] - statusOrder[bStatus];
+          }
+          
+          // Then sort by booking ID in descending order (newest first) within same status
+          return (b.id || 0) - (a.id || 0);
+        });
+
+      setFilteredBookings(processedBookings);
+      setBookings(Array.isArray(rs) ? rs : []);
+    } catch (err) {
+      console.error('Failed to load bookings', err);
+      setFilteredBookings([]);
+      setBookings([]);
+    } finally {
+      setLoadingBookings(false);
+    }
+  };
+
+  // Function to format date for display in a user-friendly way
+  const formatDisplayDate = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date)) return dateString;
+      
+      // Format as "MMM DD, YYYY" - more user-friendly
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (e) {
+      return dateString;
+    }
+  };
+
+  // Function to get relative time (e.g., "2 days ago", "Today", "Yesterday")
+  const getRelativeTime = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date)) return '';
+      
+      const now = new Date();
+      const diffTime = now - date;
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 0) {
+        return 'Today';
+      } else if (diffDays === 1) {
+        return 'Yesterday';
+      } else if (diffDays < 7) {
+        return `${diffDays} days ago`;
+      } else if (diffDays < 30) {
+        const weeks = Math.floor(diffDays / 7);
+        return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
+      } else {
+        return formatDisplayDate(dateString);
+      }
+    } catch (e) {
+      return '';
+    }
+  };
+
+  // Function to get status color
+  const getStatusColor = (status) => {
+    const statusLower = status.toLowerCase();
+    if (statusLower === 'confirmed' || statusLower === 'approved' || statusLower === 'completed') return 'bg-green-100 text-green-800';
+    if (statusLower === 'pending') return 'bg-yellow-100 text-yellow-800';
+    if (statusLower === 'cancelled' || statusLower === 'rejected') return 'bg-red-100 text-red-800';
+    return 'bg-gray-100 text-gray-800';
+  };
+
   const loadTimeslots = async () => {
     try {
       const res = await timeslotService.getAllTimeslots();
@@ -125,18 +229,6 @@ const Booking = () => {
       setTimeslots(mapped);
     } catch (err) {
       console.error('Failed to load timeslots', err);
-    }
-  };
-
-  const loadBookings = async () => {
-    try {
-      const res = await fetchAllBookings();
-      const rs = res?.ResultSet || res?.Result || [];
-      // keep as raw bookings array; we'll filter/count when needed
-      setBookings(Array.isArray(rs) ? rs : []);
-    } catch (err) {
-      console.error('Failed to load bookings', err);
-      setBookings([]);
     }
   };
 
@@ -431,6 +523,83 @@ const Booking = () => {
         </div>
       </div>
 
+        {/* Bookings Section - Show by default */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">Bookings</h2>
+            <div className="flex space-x-2">
+              <button 
+                onClick={loadBookings}
+                className="bg-blue-100 text-blue-600 px-3 py-1 rounded text-sm hover:bg-blue-200"
+              >
+                Refresh
+              </button>
+              <button 
+                onClick={() => setShowBookings(!showBookings)}
+                className="bg-gray-100 text-gray-600 px-3 py-1 rounded text-sm hover:bg-gray-200"
+              >
+                {showBookings ? 'Hide' : 'Show'} Bookings
+              </button>
+            </div>
+          </div>
+
+          {showBookings && (
+            <div className="border rounded-lg overflow-hidden">
+              {loadingBookings ? (
+                <div className="p-4 text-center">Loading bookings...</div>
+              ) : filteredBookings.length === 0 ? (
+                <div className="p-4 text-center text-gray-500">No bookings found</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booking ID</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time Slot</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {filteredBookings.map((booking) => (
+                        <tr key={booking.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{booking.id}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{booking.customerName}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{booking.contact}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{formatDisplayDate(booking.date)}</div>
+                            <div className="text-xs text-gray-500">{getRelativeTime(booking.date)}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm text-gray-900 max-w-xs truncate">{booking.services}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{booking.time || 'Not set'}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
+                              {booking.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
         <div className="flex justify-between items-center">
           {[1,2,3,4].map(n => (
@@ -528,7 +697,7 @@ const Booking = () => {
 
           <div className="flex justify-between mt-6">
             <button onClick={() => setStep(1)} className="px-4 py-2 border rounded">Back</button>
-            <button onClick={() => { if (selectedTimeslot==null){ alert('Date & Time is required'); setStep(1); return; } setStep(3); }} className="bg-blue-600 text-white px-6 py-3 rounded-lg">Continue</button>
+            <button onClick={() => { if(selectedServices.length===0){ alert('Select at least one service'); return;} setStep(3); }} className="bg-blue-600 text-white px-6 py-3 rounded-lg">Continue</button>
           </div>
         </div>
       )}
@@ -536,116 +705,162 @@ const Booking = () => {
       {step === 3 && (
         <div className="mb-6">
           <h2 className="text-2xl font-bold mb-4">Vehicle Details</h2>
-          <p className="text-gray-500 mb-4">Please provide your vehicle information</p>
+          <p className="text-gray-500 mb-4">Choose an existing vehicle or add a new one</p>
 
-              <div>
-                {loadingCustomerVehicles ? (
-                  <div className="p-4">Loading your vehicles...</div>
-                ) : (customerVehicles && customerVehicles.length > 0) ? (
-                  <div className="mb-4">
-                    <div className="text-sm text-gray-600 mb-2">Select one of your existing vehicles or add a new one</div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                      {customerVehicles.map(v => (
-                        <div key={v.id} onClick={() => {
-                          // pick this vehicle and continue to confirm
-                          setSelectedExistingVehicle(v);
-                          setCreatedVehicleId(v.id);
-                          try { localStorage.setItem('lastCreatedVehicleId', String(v.id)); } catch (e) {}
-                          // fill vehicle form for confirmation display
-                          setVehicleForm({ plate: v.plate, make: v.make, model: v.model, year: v.year, vin: '' });
-                          setStep(4);
-                        }} className={`p-4 rounded-lg border cursor-pointer ${selectedExistingVehicle?.id===v.id ? 'bg-blue-600 text-white' : 'bg-white hover:shadow-sm'}`}>
-                          <div className="font-semibold">{v.make} {v.model}</div>
-                          <div className="text-sm text-gray-500">{v.year} • {v.plate}</div>
-                        </div>
-                      ))}
+          {!showAddNewVehicle && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3">Select Existing Vehicle</h3>
+              {loadingCustomerVehicles ? <div>Loading...</div> : customerVehicles.length === 0 ? <div className="text-gray-500">No vehicles found</div> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {customerVehicles.map(v => (
+                    <div key={v.id} onClick={() => setSelectedExistingVehicle(v)} className={`p-4 rounded-lg border cursor-pointer ${selectedExistingVehicle?.id === v.id ? 'bg-blue-50 border-blue-300' : 'bg-white hover:shadow-sm'}`}>
+                      <h4 className="font-semibold">{v.make} {v.model} ({v.year})</h4>
+                      <div className="text-sm text-gray-500">Plate: {v.plate}</div>
+                      <div className="text-sm text-gray-500">Color: {v.color}</div>
                     </div>
-                    <div className="mb-4">
-                      <button onClick={() => setShowAddNewVehicle(true)} className="px-3 py-1 border rounded">Add New Vehicle</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-white rounded-lg p-6 border">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <input placeholder="Plate Number" value={vehicleForm.plate} onChange={(e)=>setVehicleForm({...vehicleForm, plate: e.target.value})} className="border rounded-md px-3 py-2" />
-                      <input placeholder="Make" value={vehicleForm.make} onChange={(e)=>setVehicleForm({...vehicleForm, make: e.target.value})} className="border rounded-md px-3 py-2" />
-                      <input placeholder="Model" value={vehicleForm.model} onChange={(e)=>setVehicleForm({...vehicleForm, model: e.target.value})} className="border rounded-md px-3 py-2" />
-                      <input placeholder="Year" value={vehicleForm.year} onChange={(e)=>setVehicleForm({...vehicleForm, year: e.target.value})} className="border rounded-md px-3 py-2" />
-                      <input placeholder="VIN (optional)" value={vehicleForm.vin} onChange={(e)=>setVehicleForm({...vehicleForm, vin: e.target.value})} className="border rounded-md px-3 py-2 md:col-span-2" />
-                    </div>
-
-                    <div className="flex justify-between items-center mt-6">
-                      <button onClick={() => setStep(2)} className="px-4 py-2 border rounded">Back</button>
-                      <button onClick={handleAddVehicle} className="bg-blue-600 text-white px-6 py-3 rounded-lg">{addingVehicle ? 'Adding...' : 'Continue to Confirm'}</button>
-                    </div>
-                  </div>
-                )}
-                {showAddNewVehicle && (
-                  <div className="bg-white rounded-lg p-6 border mt-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <input placeholder="Plate Number" value={vehicleForm.plate} onChange={(e)=>setVehicleForm({...vehicleForm, plate: e.target.value})} className="border rounded-md px-3 py-2" />
-                      <input placeholder="Make" value={vehicleForm.make} onChange={(e)=>setVehicleForm({...vehicleForm, make: e.target.value})} className="border rounded-md px-3 py-2" />
-                      <input placeholder="Model" value={vehicleForm.model} onChange={(e)=>setVehicleForm({...vehicleForm, model: e.target.value})} className="border rounded-md px-3 py-2" />
-                      <input placeholder="Year" value={vehicleForm.year} onChange={(e)=>setVehicleForm({...vehicleForm, year: e.target.value})} className="border rounded-md px-3 py-2" />
-                      <input placeholder="VIN (optional)" value={vehicleForm.vin} onChange={(e)=>setVehicleForm({...vehicleForm, vin: e.target.value})} className="border rounded-md px-3 py-2 md:col-span-2" />
-                    </div>
-
-                    <div className="flex justify-between items-center mt-6">
-                      <button onClick={() => { setShowAddNewVehicle(false); setVehicleForm({ plate:'', make:'', model:'', year:'', vin:'' }); }} className="px-4 py-2 border rounded">Cancel</button>
-                      <button onClick={handleAddVehicle} className="bg-blue-600 text-white px-6 py-3 rounded-lg">{addingVehicle ? 'Adding...' : 'Continue to Confirm'}</button>
-                    </div>
-                  </div>
-                )}
+                  ))}
+                </div>
+              )}
+              <div className="mt-4">
+                <button onClick={() => setShowAddNewVehicle(true)} className="bg-blue-600 text-white px-4 py-2 rounded">Add New Vehicle</button>
               </div>
+            </div>
+          )}
+
+          {showAddNewVehicle && (
+            <div className="bg-white p-6 rounded-lg border">
+              <h3 className="text-lg font-semibold mb-4">Add New Vehicle</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm mb-1">License Plate *</label>
+                  <input value={vehicleForm.plate} onChange={(e)=>setVehicleForm({...vehicleForm, plate: e.target.value})} className="border rounded-md px-3 py-2 w-full" />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Make *</label>
+                  <input value={vehicleForm.make} onChange={(e)=>setVehicleForm({...vehicleForm, make: e.target.value})} className="border rounded-md px-3 py-2 w-full" />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Model *</label>
+                  <input value={vehicleForm.model} onChange={(e)=>setVehicleForm({...vehicleForm, model: e.target.value})} className="border rounded-md px-3 py-2 w-full" />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Year *</label>
+                  <input type="number" value={vehicleForm.year} onChange={(e)=>setVehicleForm({...vehicleForm, year: e.target.value})} className="border rounded-md px-3 py-2 w-full" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm mb-1">VIN (Optional)</label>
+                  <input value={vehicleForm.vin} onChange={(e)=>setVehicleForm({...vehicleForm, vin: e.target.value})} className="border rounded-md px-3 py-2 w-full" />
+                </div>
+              </div>
+              <div className="mt-6 flex justify-between">
+                <button onClick={() => setShowAddNewVehicle(false)} className="px-4 py-2 border rounded">Cancel</button>
+                <button onClick={handleAddVehicle} disabled={addingVehicle} className="bg-blue-600 text-white px-6 py-2 rounded">
+                  {addingVehicle ? 'Adding...' : 'Add Vehicle'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-between mt-6">
+            <button onClick={() => setStep(2)} className="px-4 py-2 border rounded">Back</button>
+            <button onClick={() => { if(!selectedExistingVehicle && !showAddNewVehicle){ alert('Select or add a vehicle'); return;} setStep(4); }} className="bg-blue-600 text-white px-6 py-3 rounded-lg">Continue</button>
+          </div>
         </div>
       )}
 
       {step === 4 && (
         <div className="mb-6">
           <h2 className="text-2xl font-bold mb-4">Confirm Booking</h2>
+          <p className="text-gray-500 mb-4">Review your booking details before confirming</p>
 
           <div className="bg-white rounded-lg p-6 border mb-4">
-            <h3 className="font-semibold mb-2">Services</h3>
-            {selectedServices.map(s => (
-              <div key={s.S_ServiceID} className="flex justify-between py-2 border-b last:border-b-0">
-                <div>
-                  <div className="font-medium">{s.S_ServiceName}</div>
-                  <div className="text-sm text-gray-500">{s.S_Time}</div>
-                </div>
-                <div className="font-semibold">Rs.{s.S_BaseCharge}</div>
+            <h3 className="text-lg font-semibold mb-3">Appointment Details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-gray-500">Date</div>
+                <div className="font-medium">{selectedDate}</div>
               </div>
-            ))}
-
-            <div className="flex justify-between py-3 border-t mt-4">
-              <div className="font-medium">Date & Time</div>
-              <div>{selectedDate} • {selectedTimeslot?.startDisplay} - {selectedTimeslot?.endDisplay}</div>
+              <div>
+                <div className="text-sm text-gray-500">Time Slot</div>
+                <div className="font-medium">{selectedTimeslot?.startDisplay} - {selectedTimeslot?.endDisplay}</div>
+              </div>
             </div>
-
-            <div className="flex justify-between py-3">
-              <div className="font-medium">Vehicle</div>
-              <div>{vehicleForm.make} {vehicleForm.model} ({vehicleForm.plate})</div>
-            </div>
-
-            <div className="flex justify-between py-3">
-              <div className="font-medium">Notes</div>
-              <div>{notes || '—'}</div>
-            </div>
-
-            <div className="flex justify-between py-3 border-t font-semibold">
-              <div>Total</div>
-              <div>Rs.{servicesTotal}</div>
-            </div>
-
           </div>
 
-          <div className="flex justify-between items-center">
+          <div className="bg-white rounded-lg p-6 border mb-4">
+            <h3 className="text-lg font-semibold mb-3">Selected Services</h3>
+            <div className="space-y-3">
+              {selectedServices.map(s => (
+                <div key={s.S_ServiceID} className="flex justify-between items-center border-b pb-2">
+                  <div>
+                    <div className="font-medium">{s.S_ServiceName}</div>
+                    <div className="text-sm text-gray-500">{s.S_Description}</div>
+                  </div>
+                  <div className="text-blue-600 font-bold">Rs.{s.S_BaseCharge}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-4 border-t flex justify-between">
+              <div className="font-semibold">Total</div>
+              <div className="text-blue-600 font-bold text-lg">Rs.{servicesTotal}</div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-6 border mb-4">
+            <h3 className="text-lg font-semibold mb-3">Vehicle Details</h3>
+            {selectedExistingVehicle ? (
+              <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-sm text-gray-500">Make & Model</div>
+                    <div className="font-medium">{selectedExistingVehicle.make} {selectedExistingVehicle.model}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-500">Year</div>
+                    <div className="font-medium">{selectedExistingVehicle.year}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-500">License Plate</div>
+                    <div className="font-medium">{selectedExistingVehicle.plate}</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-sm text-gray-500">Make & Model</div>
+                    <div className="font-medium">{vehicleForm.make} {vehicleForm.model}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-500">Year</div>
+                    <div className="font-medium">{vehicleForm.year}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-500">License Plate</div>
+                    <div className="font-medium">{vehicleForm.plate}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {notes && (
+            <div className="bg-white rounded-lg p-6 border mb-4">
+              <h3 className="text-lg font-semibold mb-3">Remarks</h3>
+              <p className="text-gray-700">{notes}</p>
+            </div>
+          )}
+
+          <div className="flex justify-between mt-6">
             <button onClick={() => setStep(3)} className="px-4 py-2 border rounded">Back</button>
-            <button onClick={handleConfirmBooking} className="bg-green-600 text-white px-6 py-3 rounded-lg">{booking ? 'Booking...' : 'Confirm Booking'}</button>
+            <button onClick={handleConfirmBooking} disabled={booking} className="bg-blue-600 text-white px-6 py-3 rounded-lg">
+              {booking ? 'Booking...' : 'Confirm Booking'}
+            </button>
           </div>
         </div>
       )}
-
-      </div>
+    </div>
     </div>
   );
 };

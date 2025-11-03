@@ -17,7 +17,10 @@ import {
   GET_ALL_USERS_FAIL,
   GET_DASHBOARD_STATS_REQUEST,
   GET_DASHBOARD_STATS_SUCCESS,
-  GET_DASHBOARD_STATS_FAIL
+  GET_DASHBOARD_STATS_FAIL,
+  GET_LATEST_BOOKINGS_REQUEST,
+  GET_LATEST_BOOKINGS_SUCCESS,
+  GET_LATEST_BOOKINGS_FAIL
 } from '../constants/AdminConstants';
 import {
   fetchAllBookings,
@@ -25,7 +28,8 @@ import {
   fetchAllServices,
   fetchAllVehicles,
   fetchAllUsers,
-  fetchDashboardStats
+  fetchDashboardStats,
+  fetchLatestBookings
 } from '../services/adminServices';
 
 // Action to get all bookings
@@ -51,6 +55,26 @@ export const getAllBookings = () => async (dispatch) => {
     const message = error.response?.data?.message || error.message || error.toString();
     dispatch({
       type: GET_ALL_BOOKINGS_FAIL,
+      payload: message
+    });
+  }
+};
+
+// Action to get latest 5 bookings
+export const getLatestBookings = () => async (dispatch) => {
+  try {
+    dispatch({ type: GET_LATEST_BOOKINGS_REQUEST });
+
+    const latestBookings = await fetchLatestBookings();
+
+    dispatch({
+      type: GET_LATEST_BOOKINGS_SUCCESS,
+      payload: latestBookings
+    });
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || error.toString();
+    dispatch({
+      type: GET_LATEST_BOOKINGS_FAIL,
       payload: message
     });
   }
@@ -168,7 +192,6 @@ export const getAllUsers = () => async (dispatch) => {
   }
 };
 
-
 // Action to get dashboard stats
 export const getDashboardStats = () => async (dispatch) => {
   try {
@@ -182,7 +205,8 @@ export const getDashboardStats = () => async (dispatch) => {
       parts: data.parts?.ResultSet || data.parts?.Result || data.parts || [],
       services: data.services?.ResultSet || data.services?.Result || data.services || [],
       vehicles: data.vehicles?.ResultSet || data.vehicles?.Result || data.vehicles || [],
-      users: data.users?.ResultSet || data.users?.Result || data.users || []
+      users: data.users?.ResultSet || data.users?.Result || data.users || [],
+      latestBookings: data.latestBookings || []
     };
 
     dispatch({

@@ -1,16 +1,14 @@
 // src/pages/Login.jsx
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { User, Phone, Shield, Wrench, Users, AlertCircle } from "lucide-react";
+import { Phone, Shield, Wrench, Users, AlertCircle } from "lucide-react";
 import { authService } from "../services/authServices";
 import { USER_ROLES } from "../constants/authConstants";
 import washImage from "../assets/wash.jpg";
-//import washImage from "../assets/car-wash.jpg";
 
 const Login = ({ onLoginSuccess }) => {
-  const [detectedRole, setDetectedRole] = useState(null); // Role detected from backend
+  const [detectedRole, setDetectedRole] = useState(null);
   const [formData, setFormData] = useState({
-    username: "",
     phone: "",
     otp: "",
   });
@@ -24,8 +22,6 @@ const Login = ({ onLoginSuccess }) => {
   useEffect(() => {
     const currentUser = authService.getCurrentUser();
     if (currentUser) {
-      // User is already logged in — only redirect if we can derive a valid role string
-      // Support multiple shapes stored in localStorage (role, roleString, RoleID, etc.)
       const roleCandidates = [
         currentUser.role,
         currentUser.roleString,
@@ -46,7 +42,6 @@ const Login = ({ onLoginSuccess }) => {
           }
         }
         if (typeof r === 'number') {
-          // Map numeric roles to string based on USER_ROLES constant
           if (r === USER_ROLES.ADMIN) roleStr = 'admin';
           else if (r === USER_ROLES.TECHNICIAN) roleStr = 'technician';
           else if (r === USER_ROLES.CUSTOMER) roleStr = 'customer';
@@ -57,14 +52,11 @@ const Login = ({ onLoginSuccess }) => {
       if (roleStr) {
         navigate(`/${roleStr}`, { replace: true });
       } else {
-        // Stored user has an unknown role shape — clear it so the login page can be used
         console.warn('Stored user has no valid role, clearing stored user to allow login.', currentUser);
         authService.logout();
       }
     }
   }, [navigate]);
-
-  // All roles now use OTP-based login
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -72,22 +64,8 @@ const Login = ({ onLoginSuccess }) => {
     setError("");
   };
 
-  // Clear form data when role changes
-  const handleRoleChange = (newRole) => {
-    setRole(newRole);
-    setFormData({
-      username: "",
-      phone: "",
-      otp: "",
-    });
-    setError("");
-    setOtpSent(false);
-  };
-
-  // --- Handle form submission ---
   const handleSubmit = (e) => {
     e.preventDefault();
-    console.log('Form submitted, otpSent:', otpSent, 'loading:', loading);
     
     if (otpSent && !loading) {
       handleOtpLogin(e);
@@ -96,207 +74,140 @@ const Login = ({ onLoginSuccess }) => {
     }
   };
 
-  // Key changes in Login.jsx - handleSendOtp function
+  const handleSendOtp = async () => {
+    if (!formData.phone.trim()) {
+      setError("Please enter phone number");
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const response = await fetch(`http://localhost:60748/Login/Login?contact=${formData.phone}`);
+      const data = await response.json();
 
-const handleSendOtp = async () => {
-  if (!formData.phone.trim()) {
-    setError("Please enter phone number");
-    return;
-  }
-  
-  try {
+      console.log('Backend response:', data);
+
+      if (data.StatusCode === 200) {
+        // Store values in localStorage
+        if (data.CustomerID !== undefined && data.CustomerID !== null) {
+          localStorage.setItem('CustomerID', data.CustomerID);
+        }
+        if (data.UserID) localStorage.setItem('UserID', data.UserID);
+        if (data.UserName) localStorage.setItem('UserName', data.UserName);
+        if (data.Email) localStorage.setItem('Email', data.Email);
+
+        // Map RoleID correctly
+        let roleString = 'customer';
+        const roleId = data.RoleID || data.roleId || data.Result?.RoleID;
+        
+        console.log('Raw RoleID from backend:', roleId);
+        
+        if (roleId === 1) {
+          roleString = 'customer';
+        } else if (roleId === 2) {
+          roleString = 'admin';
+        } else if (roleId === 3) {
+          roleString = 'technician';
+        }
+
+        console.log('Mapped roleString:', roleString);
+
+        // Create normalized user object
+        const normalizedUser = {
+          UserName: data.UserName || formData.phone,
+          userName: data.UserName || formData.phone,
+          Email: data.Email || null,
+          email: data.Email || null,
+          CustomerID: data.CustomerID !== undefined ? data.CustomerID : null,
+          customerID: data.CustomerID !== undefined ? data.CustomerID : null,
+          UserID: data.UserID || null,
+          userId: data.UserID || null,
+          mobileNumber: formData.phone,
+          RoleID: roleId,
+          role: roleString,
+          roleString: roleString
+        };
+
+        // Store normalized user
+        localStorage.setItem('user', JSON.stringify(normalizedUser));
+        console.log('Normalized user stored:', normalizedUser);
+
+        // Set detected role for navigation
+        setDetectedRole(roleString);
+        setOtpSent(true);
+        alert(`OTP sent to ${formData.phone}. Detected role: ${roleString}`);
+      } else {
+        throw new Error(data.Result || "Failed to send OTP");
+      }
+    } catch (err) {
+      console.error('Send OTP error:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOtpLogin = async (e) => {
+    e.preventDefault();
+    console.log('OTP Login clicked, formData:', formData, 'detectedRole:', detectedRole);
+
+    if (!formData.otp.trim()) {
+      setError("Please enter OTP");
+      return;
+    }
+
+    if (!detectedRole) {
+      setError("Role not detected. Please try sending OTP again.");
+      return;
+    }
+
     setLoading(true);
-    const response = await fetch(`http://localhost:60748/Login/Login?contact=${formData.phone}`);
-    const data = await response.json();
 
-    console.log('Backend response:', data);
-
-    if (data.StatusCode === 200) {
-      // Store values in localStorage
-      if (data.CustomerID !== undefined && data.CustomerID !== null) {
-        localStorage.setItem('CustomerID', data.CustomerID);
-      }
-      if (data.UserID) localStorage.setItem('UserID', data.UserID);
-      if (data.UserName) localStorage.setItem('UserName', data.UserName);
-      if (data.Email) localStorage.setItem('Email', data.Email);
-
-      // CRITICAL FIX: Map RoleID correctly
-      let roleString = 'customer'; // default
-      const roleId = data.RoleID || data.roleId || data.Result?.RoleID;
+    try {
+      // Verify OTP with backend
+      const verifyResponse = await fetch(
+        `http://localhost:60748/Login/VerifyOtp?contact=${formData.phone}&otpCode=${formData.otp}`,
+        { method: 'POST' }
+      );
+      const verifyData = await verifyResponse.json();
       
-      console.log('Raw RoleID from backend:', roleId);
-      
-      // Map numeric role to string - FIXED LOGIC
-      if (roleId === 1) {
-        roleString = 'customer';
-      } else if (roleId === 2) {
-        roleString = 'admin';
-      } else if (roleId === 3) {
-        roleString = 'technician';
+      console.log('Verify OTP response:', verifyData);
+
+      if (verifyData.StatusCode === 200) {
+        // Get the stored user object
+        const storedUser = JSON.parse(localStorage.getItem('user'));
+        
+        console.log('Stored user:', storedUser);
+        console.log('Detected role:', detectedRole);
+
+        // Call onLoginSuccess if provided
+        if (onLoginSuccess) {
+          onLoginSuccess(storedUser);
+        }
+
+        // Navigate based on detected role
+        let targetRoute = '/customer';
+        
+        if (detectedRole === 'admin') {
+          targetRoute = '/admin';
+        } else if (detectedRole === 'technician') {
+          targetRoute = '/technician';
+        } else if (detectedRole === 'customer') {
+          targetRoute = '/customer';
+        }
+
+        console.log('Navigating to:', targetRoute);
+        navigate(targetRoute, { replace: true });
+      } else {
+        throw new Error(verifyData.Result || 'OTP verification failed');
       }
-
-      console.log('Mapped roleString:', roleString);
-
-      // Create normalized user object
-      const normalizedUser = {
-        UserName: data.UserName || formData.username || null,
-        userName: data.UserName || formData.username || null,
-        Email: data.Email || null,
-        email: data.Email || null,
-        CustomerID: data.CustomerID !== undefined ? data.CustomerID : null,
-        customerID: data.CustomerID !== undefined ? data.CustomerID : null,
-        UserID: data.UserID || null,
-        userId: data.UserID || null,
-        mobileNumber: formData.phone || null,
-        RoleID: roleId,
-        role: roleString,
-        roleString: roleString
-      };
-
-      // Store normalized user
-      localStorage.setItem('user', JSON.stringify(normalizedUser));
-      console.log('Normalized user stored:', normalizedUser);
-
-      // Set detected role for navigation
-      setDetectedRole(roleString);
-      setOtpSent(true);
-      alert(`OTP sent to ${formData.phone}. Detected role: ${roleString}`);
-    } else {
-      throw new Error(data.Result || "Failed to send OTP");
+    } catch (err) {
+      console.error('OTP Login error:', err);
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.error('Send OTP error:', err);
-    setError(err.message);
-  } finally {
-    setLoading(false);
-  }
-};
-
-// FIXED handleOtpLogin function
-const handleOtpLogin = async (e) => {
-  e.preventDefault();
-  console.log('OTP Login clicked, formData:', formData, 'detectedRole:', detectedRole);
-
-  if (!formData.otp.trim()) {
-    setError("Please enter OTP");
-    return;
-  }
-
-  if (!detectedRole) {
-    setError("Role not detected. Please try sending OTP again.");
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    // Verify OTP with backend
-    const verifyResponse = await fetch(
-      `http://localhost:60748/Login/VerifyOtp?contact=${formData.phone}&otpCode=${formData.otp}`,
-      { method: 'POST' }
-    );
-    const verifyData = await verifyResponse.json();
-    
-    console.log('Verify OTP response:', verifyData);
-
-    if (verifyData.StatusCode === 200) {
-      // Get the stored user object
-      const storedUser = JSON.parse(localStorage.getItem('user'));
-      
-      console.log('Stored user:', storedUser);
-      console.log('Detected role:', detectedRole);
-      console.log('User role from storage:', storedUser?.role);
-
-      // Call onLoginSuccess if provided
-      if (onLoginSuccess) {
-        onLoginSuccess(storedUser);
-      }
-
-      // Navigate based on detected role - FIXED LOGIC
-      let targetRoute = '/customer'; // default
-      
-      if (detectedRole === 'admin') {
-        targetRoute = '/admin';
-      } else if (detectedRole === 'technician') {
-        targetRoute = '/technician';
-      } else if (detectedRole === 'customer') {
-        targetRoute = '/customer';
-      }
-
-      console.log('Navigating to:', targetRoute);
-      navigate(targetRoute, { replace: true });
-    } else {
-      throw new Error(verifyData.Result || 'OTP verification failed');
-    }
-  } catch (err) {
-    console.error('OTP Login error:', err);
-    setError(err.message || 'Login failed. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-};
-
-// ==========================================
-// UPDATED authServices.js - verifyOtp function
-// ==========================================
-
-verifyOtp: async (mobileNumber, otpCode) => {
-  try {
-    const resp = await fetch(
-      `http://localhost:60748/Login/VerifyOtp?contact=${encodeURIComponent(mobileNumber)}&otpCode=${encodeURIComponent(otpCode)}`,
-      { method: 'POST' }
-    );
-    const data = await resp.json();
-    console.log('authService.verifyOtp response', data);
-
-    if (!data || data.StatusCode !== 200) {
-      throw new Error(data?.Result || data?.Message || 'OTP verification failed');
-    }
-
-    // Get RoleID from response
-    const roleId = data.RoleID || data.roleId || data.Result?.RoleID;
-    
-    // FIXED: Map RoleID correctly
-    let roleString = 'customer'; // default
-    if (roleId === 1) {
-      roleString = 'customer';
-    } else if (roleId === 2) {
-      roleString = 'admin';
-    } else if (roleId === 3) {
-      roleString = 'technician';
-    }
-
-    console.log('verifyOtp - RoleID:', roleId, 'Mapped to:', roleString);
-
-    // Extract CustomerID
-    const customerId = data.CustomerID !== undefined ? data.CustomerID : null;
-
-    const userObj = {
-      CustomerID: customerId,
-      customerID: customerId,
-      UserID: data.UserID || null,
-      userId: data.UserID || null,
-      UserName: data.UserName || mobileNumber,
-      userName: data.UserName || mobileNumber,
-      Email: data.Email || null,
-      email: data.Email || null,
-      RoleID: roleId,
-      roleString: roleString,
-      role: roleString,
-      mobileNumber
-    };
-
-    console.log('authService.verifyOtp - userObj to persist:', userObj);
-    
-    // Persist user
-    localStorage.setItem('user', JSON.stringify(userObj));
-
-    return userObj;
-  } catch (err) {
-    console.error('authService.verifyOtp error', err);
-    throw err;
-  }
-};
+  };
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -314,7 +225,7 @@ verifyOtp: async (mobileNumber, otpCode) => {
             <h2 className="text-3xl font-bold text-gray-800 mb-2">
               Welcome to Premium Auto Care
             </h2>
-            <p className="text-gray-600">Sign in to access your dashboard</p>
+            <p className="text-gray-600">Sign in with your phone number</p>
           </div>
 
           {error && (
@@ -323,36 +234,27 @@ verifyOtp: async (mobileNumber, otpCode) => {
             </div>
           )}
 
-          {/* OTP Login for All Roles */}
+          {/* OTP Login Form */}
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">Username</label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  name="username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-xl pl-11 pr-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 bg-gray-50 focus:bg-white"
-                  placeholder="Enter username"
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">Phone Number</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Phone Number
+              </label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   name="phone"
+                  type="tel"
                   value={formData.phone}
                   onChange={handleInputChange}
                   className="w-full border border-gray-300 rounded-xl pl-11 pr-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 bg-gray-50 focus:bg-white"
-                  placeholder="Enter phone number"
+                  placeholder="Enter your phone number"
                   required
+                  disabled={otpSent}
                 />
               </div>
             </div>
+            
             {!otpSent ? (
               <button
                 type="button"
@@ -363,14 +265,16 @@ verifyOtp: async (mobileNumber, otpCode) => {
                 {loading ? (
                   <span className="flex items-center justify-center">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Sending...
+                    Sending OTP...
                   </span>
                 ) : "Send OTP"}
               </button>
             ) : (
               <>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">Enter OTP</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Enter OTP
+                  </label>
                   <div className="relative">
                     <input
                       name="otp"
@@ -382,25 +286,36 @@ verifyOtp: async (mobileNumber, otpCode) => {
                       required
                     />
                   </div>
+                  <p className="text-sm text-gray-600 mt-2 text-center">
+                    OTP sent to {formData.phone}
+                  </p>
                 </div>
-                <button 
-                  type="submit" 
-                  disabled={loading || !formData.otp.trim()}
-                  onClick={(e) => {
-                    console.log('Verify button clicked for detectedRole:', detectedRole);
-                    console.log('Current formData:', formData);
-                    console.log('OTP sent state:', otpSent);
-                    console.log('Loading state:', loading);
-                  }}
-                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-green-400 disabled:to-emerald-400 text-white py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition duration-200 transform hover:scale-[1.02] disabled:transform-none"
-                >
-                  {loading ? (
-                    <span className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      Verifying...
-                    </span>
-                  ) : "Verify OTP & Login"}
-                </button>
+                
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpSent(false);
+                      setFormData(prev => ({ ...prev, otp: "" }));
+                      setError("");
+                    }}
+                    className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-xl font-semibold transition duration-200"
+                  >
+                    Change Number
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={loading || !formData.otp.trim()}
+                    className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-green-400 disabled:to-emerald-400 text-white py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition duration-200"
+                  >
+                    {loading ? (
+                      <span className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                        Verifying...
+                      </span>
+                    ) : "Login"}
+                  </button>
+                </div>
               </>
             )}
           </form>
@@ -440,7 +355,6 @@ verifyOtp: async (mobileNumber, otpCode) => {
         {/* Content overlay */}
         <div className="absolute inset-0 flex items-center justify-center p-12">
           <div className="text-center text-white max-w-lg">
-            {/* Decorative elements */}
             <div className="flex justify-center mb-6">
               <div className="w-20 h-1 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full"></div>
             </div>

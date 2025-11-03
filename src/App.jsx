@@ -29,8 +29,13 @@ import UserManagement from './pages/UserManagement';
 import TimeslotManagement from './pages/TimeslotManagement';
 import CustomersManagement from './pages/CustomersManagement';
 import Categories from './pages/Categories';
-import Invoicing from './pages/Invoicing'; // Add this import
+import Invoicing from './pages/Invoicing';
 import PreviousServices from './pages/PreviousServices';
+
+// Technician specific components
+import TechnicianVehicle from './pages/TechnicianVehicle';
+import TechnicianPartsInventory from './pages/TechnicianPartsInventory';
+import TechnicianJobCards from './pages/TechnicianJobCards';
 
 function App() {
   const [loading, setLoading] = useState(true);
@@ -357,7 +362,7 @@ function App() {
           element={
             user?.role === USER_ROLES.TECHNICIAN ? (
               <DashboardLayout title="My Job Cards" onLogout={handleLogout}>
-                <JobCards />
+                <TechnicianJobCards />
               </DashboardLayout>
             ) : (
               <Navigate to="/login" replace />
@@ -381,7 +386,7 @@ function App() {
           element={
             user?.role === USER_ROLES.TECHNICIAN ? (
               <DashboardLayout title="Parts Inventory" onLogout={handleLogout}>
-                <PartsInventory />
+                <TechnicianPartsInventory />
               </DashboardLayout>
             ) : (
               <Navigate to="/login" replace />
@@ -393,7 +398,7 @@ function App() {
           element={
             user?.role === USER_ROLES.TECHNICIAN ? (
               <DashboardLayout title="Vehicles Management" onLogout={handleLogout}>
-                <Vehicles />
+                <TechnicianVehicle />
               </DashboardLayout>
             ) : (
               <Navigate to="/login" replace />

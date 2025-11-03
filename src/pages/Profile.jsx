@@ -212,13 +212,7 @@ const Profile = () => {
             color="text-blue-600"
             progress
           />
-          <StatCard
-            title="Member Since"
-            value={userData.createdAt ? new Date(userData.createdAt).toLocaleDateString() : 'N/A'}
-            icon={<Calendar className="text-green-600" />}
-            color="text-green-600"
-            progress
-          />
+
           <StatCard
             title="Last Login"
             value={userData.lastLogin ? new Date(userData.lastLogin).toLocaleDateString() : 'Today'}
@@ -337,20 +331,6 @@ const Profile = () => {
                       Role
                     </div>
                     <p className="text-gray-900 font-medium capitalize text-base">{userData.role}</p>
-                  </div>
-                  
-                  <div className="p-4 bg-green-50 rounded-lg">
-                    <div className="flex items-center text-sm text-gray-500 mb-2">
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Member Since
-                    </div>
-                    <p className="text-gray-900 font-medium text-base">
-                      {userData.createdAt ? new Date(userData.createdAt).toLocaleDateString('en-US', { 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      }) : 'N/A'}
-                    </p>
                   </div>
                   
                   <div className="p-4 bg-purple-50 rounded-lg">

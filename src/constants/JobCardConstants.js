@@ -14,3 +14,7 @@ export const UpdateJobCard_FAIL = 'UpdateJobCard_FAIL';
 export const DeleteJobCard_REQUEST = 'DeleteJobCard_REQUEST';
 export const DeleteJobCard_SUCCESS = 'DeleteJobCard_SUCCESS';
 export const DeleteJobCard_FAIL = 'DeleteJobCard_FAIL';
+
+export const GetAllTechnicians_REQUEST = 'GetAllTechnicians_REQUEST';
+export const GetAllTechnicians_SUCCESS = 'GetAllTechnicians_SUCCESS';
+export const GetAllTechnicians_FAIL = 'GetAllTechnicians_FAIL';

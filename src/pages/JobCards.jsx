@@ -1,8 +1,8 @@
 // components/JobCards.jsx
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { ClipboardList, Plus, Search, Filter, Edit3, Trash2, RefreshCw, Calendar, User, Tag, AlertCircle, Package } from 'lucide-react';
-import { GetAllJobCards, AddJobCard, UpdateJobCard, DeleteJobCard } from '../actions/jobCardActions';
+import { ClipboardList, Plus, Search, Filter, Edit3, RefreshCw, Calendar, User, Tag, AlertCircle, Package } from 'lucide-react';
+import { GetAllJobCards, AddJobCard, UpdateJobCard, GetAllTechnicians } from '../actions/jobCardActions';
 import { GetAllJobCardItems } from '../actions/jobCardItemActions';
 import { fetchAllParts, fetchAllServices } from '../services/jobCardItemServices';
 import { updateBookingServices, addBookingParts, getBookingPartsByBookingID, addJobCard as addJobCardService } from '../services/jobCardServices';
@@ -12,12 +12,15 @@ const JobCards = () => {
   const dispatch = useDispatch();
   const jobCardList = useSelector(state => state.jobCardList);
   const { loading, jobCards, error } = jobCardList;
+  
+  const technicianList = useSelector(state => state.technicianList);
+  const { technicians = [] } = technicianList || {};
+
   const jobCardItemList = useSelector(state => state.jobCardItemList);
   const { jobCardItems = [] } = jobCardItemList || {};
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [currentJobCard, setCurrentJobCard] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [parts, setParts] = useState([]);
@@ -32,6 +35,7 @@ const JobCards = () => {
   const [selectedServices, setSelectedServices] = useState([]); // array of S_ServiceID
   const [selectedPartsRows, setSelectedPartsRows] = useState([]); // [{ partId, qty, unitPrice }]
   const [serviceFilter, setServiceFilter] = useState('');
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState(''); // Store technician ID instead of name
   // local cache for totals (Quantity/Price/Status) keyed by J_BookingID to reflect
   // newly-sent totals immediately in the UI when backend takes time to reflect them
   const [totalsMap, setTotalsMap] = useState({}); // bookingId -> { Quantity, Price, J_JobCardStatus }
@@ -55,6 +59,7 @@ const JobCards = () => {
 
   useEffect(() => {
     dispatch(GetAllJobCards());
+    dispatch(GetAllTechnicians()); // Fetch technicians
     // Load job card items so we can show parts/qty/price per job card
     dispatch(GetAllJobCardItems());
     fetchParts();
@@ -129,12 +134,18 @@ const JobCards = () => {
     // reset selections
     setSelectedServices([]);
     setSelectedPartsRows([]);
+    setSelectedTechnicianId(''); // Reset technician selection
     setIsModalVisible(true);
   };
 
   const handleEditJobCard = async (jobCard) => {
     setCurrentJobCard(jobCard);
     const bookingIdKey = String(jobCard.J_BookingID || '');
+    
+    // Find the technician ID based on the technician name from the job card
+    const foundTechnician = technicians.find(tech => tech.FullName === jobCard.J_Technician);
+    setSelectedTechnicianId(foundTechnician ? foundTechnician.TechnicianID : '');
+
     // First try to fetch authoritative booking parts synchronously so modal opens with correct data
     try {
       const resp = await getBookingPartsByBookingID(bookingIdKey);
@@ -188,33 +199,6 @@ const JobCards = () => {
     setIsModalVisible(true);
   };
 
-  const handleDeleteJobCard = async (jobCard) => {
-    if (!window.confirm('Are you sure you want to delete this job card?')) {
-      return;
-    }
-
-    try {
-      setDeleteLoading(prev => ({ ...prev, [jobCard.J_JobCardID]: true }));
-
-      const jobCardData = {
-        J_JobCardID: jobCard.J_JobCardID,
-        J_BookingID: jobCard.J_BookingID,
-        J_CreatedDate: jobCard.J_CreatedDate,
-        J_Technician: jobCard.J_Technician,
-        J_JobCardStatus: jobCard.J_JobCardStatus,
-        Status: 'I'
-      };
-
-      await dispatch(DeleteJobCard(jobCardData));
-      alert('Job card deleted successfully');
-      dispatch(GetAllJobCards());
-    } catch (error) {
-      alert('Failed to delete job card');
-    } finally {
-      setDeleteLoading(prev => ({ ...prev, [jobCard.J_JobCardID]: false }));
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
@@ -226,7 +210,7 @@ const JobCards = () => {
       const jobCardData = {
         J_BookingID: values.bookingId,
         J_CreatedDate: dayjs(values.createdDate).format('YYYY-MM-DD'),
-        J_Technician: values.technician,
+        J_TechnicianID: selectedTechnicianId, // Use technician ID instead of name
         J_JobCardStatus: values.jobCardStatus,
         // include selected services and parts arrays (backend may accept or be wired later)
         Services: selectedServices,
@@ -259,7 +243,7 @@ const JobCards = () => {
           const payload = {
             J_BookingID: String(bookingId),
             J_CreatedDate: jobCardData.J_CreatedDate,
-            J_Technician: jobCardData.J_Technician,
+            J_Technician: jobCardData.J_TechnicianID, // Use technician ID
             J_JobCardStatus: jobCardData.J_JobCardStatus,
             Quantity: partsQty,
             Price: parseFloat(grandTotal.toFixed(2))
@@ -350,6 +334,7 @@ const JobCards = () => {
 
   const handleRefresh = () => {
     dispatch(GetAllJobCards());
+    dispatch(GetAllTechnicians()); // Refresh technicians too
     dispatch(GetAllJobCardItems());
     fetchParts();
   };
@@ -786,21 +771,6 @@ const JobCards = () => {
                             >
                               <Edit3 className="h-4 w-4" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteJobCard(jobCard)}
-                              className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-100 transition-colors"
-                              title="Delete job card"
-                              disabled={deleteLoading[jobCard.J_JobCardID]}
-                            >
-                              {deleteLoading[jobCard.J_JobCardID] ? (
-                                <svg className="animate-spin h-4 w-4 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -840,22 +810,29 @@ const JobCards = () => {
       </h3>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Technician Input */}
+        {/* Technician Dropdown */}
         <div className="md:col-span-2">
           <label className="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
             Technician
           </label>
-          <input
-            name="technician"
-            type="text"
-            placeholder="Enter technician name"
-            defaultValue={currentJobCard?.J_Technician}
+          <select
+            value={selectedTechnicianId}
+            onChange={(e) => setSelectedTechnicianId(e.target.value)}
             required
             className="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 bg-white"
-          />
+          >
+            <option value="">Select Technician</option>
+            {Array.isArray(technicians) && technicians
+              .filter(tech => tech.Status === 'A') // Only show active technicians
+              .map(tech => (
+                <option key={tech.TechnicianID} value={tech.TechnicianID}>
+                  {tech.FullName}
+                </option>
+              ))}
+          </select>
         </div>
 
-        Job Card Status 
+        {/* Job Card Status */}
         <div className="md:col-span-2">
           <label className="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
             Job Card Status

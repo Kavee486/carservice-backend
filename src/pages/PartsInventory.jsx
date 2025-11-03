@@ -30,6 +30,17 @@ const PartsInventory = () => {
     unitPrice: ''
   }]);
 
+  // Debug: Log parts data to see what's actually coming from API
+  useEffect(() => {
+    if (parts && Array.isArray(parts)) {
+      console.log('Parts data:', parts);
+      if (parts.length > 0) {
+        console.log('First part object:', parts[0]);
+        console.log('Available keys in first part:', Object.keys(parts[0]));
+      }
+    }
+  }, [parts]);
+
   useEffect(() => {
     dispatch(GetAllPartsInventory());
     dispatch(GetAllCategories());
@@ -388,19 +399,19 @@ const PartsInventory = () => {
                   </thead>
                   <tbody>
                     {filteredParts.filter(Boolean).map((part, idx) => {
-                          const stockQty = parseInt(part?.P_StockQty || 0);
+                      const stockQty = parseInt(part?.P_StockQty || 0);
                       let stockColor = 'bg-green-100 text-green-800';
                       if (stockQty === 0) stockColor = 'bg-red-100 text-red-800';
                       else if (stockQty < 10) stockColor = 'bg-amber-100 text-amber-800';
 
                       return (
-                            <tr key={part?.P_PartID || idx} className="border-b border-gray-200 hover:bg-blue-50 transition-colors duration-200">
-                              <td className="py-3 px-4 text-sm font-medium text-gray-900">{part?.P_PartName || '-'}</td>
-                              <td className="py-3 px-4">
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                  {part?.P_CategoryName || '-'}
-                                </span>
-                              </td>
+                        <tr key={part?.P_PartID || idx} className="border-b border-gray-200 hover:bg-blue-50 transition-colors duration-200">
+                          <td className="py-3 px-4 text-sm font-medium text-gray-900">{part?.P_PartName || '-'}</td>
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              {part?.P_CategoryName || 'No Category'}
+                            </span>
+                          </td>
                           <td className="py-3 px-4">
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${stockColor}`}>
                               {stockQty}
@@ -408,7 +419,7 @@ const PartsInventory = () => {
                           </td>
                           <td className="py-3 px-4">
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                  {formatCurrency(part?.P_UnitPrice)}
+                              {formatCurrency(part?.P_UnitPrice)}
                             </span>
                           </td>
                           <td className="py-3 px-4">
@@ -424,7 +435,7 @@ const PartsInventory = () => {
                                 onClick={() => handleDeletePart(part)}
                                 className="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-100 transition-colors"
                                 title="Delete part"
-                                    disabled={deleteLoading[part?.P_PartID]}
+                                disabled={deleteLoading[part?.P_PartID]}
                               >
                                 {deleteLoading[part?.P_PartID] ? (
                                   <svg className="animate-spin h-4 w-4 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

@@ -4,26 +4,20 @@ import { authService } from '../services/authServices';
 import { USER_ROLES } from '../constants';
 import {
   Home,
-  Calendar,
-  ClipboardList,
   Package,
   User,
-  Users,
   LogOut,
-  Clock,
-  Ticket,
-  Wrench,
-  FileText,
   Car,
   ChevronLeft,
   ChevronRight,
   Menu,
+  ClipboardList,
+  Wrench,
+  Calendar,
+  FileText,
+  Users,
+  Clock,
   Layers,
-  Building,
-  Warehouse,
-  Briefcase,
-  DollarSign,
-  FileText as InvoiceIcon
 } from 'lucide-react';
 
 const Sidebar = ({ onLogout }) => {
@@ -32,7 +26,6 @@ const Sidebar = ({ onLogout }) => {
   const navigate = useNavigate();
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState({});
 
   const handleLogout = () => {
     if (onLogout) {
@@ -51,94 +44,142 @@ const Sidebar = ({ onLogout }) => {
     setIsMobileOpen(!isMobileOpen);
   };
 
-  const toggleCategory = (categoryName) => {
-    setExpandedCategories(prev => ({
-      ...prev,
-      [categoryName]: !prev[categoryName]
-    }));
-  };
-
   const getMenuItems = () => {
     switch (user?.role) {
       case USER_ROLES.ADMIN:
-        return {
-          dashboard: { 
+        return [
+          { 
             icon: Home, 
             label: 'Dashboard', 
             path: '/admin',
             standalone: true 
           },
-          peopleManagement: {
-            icon: Users,
-            label: 'People Management',
-            items: [
-              { icon: Users, label: 'User Management', path: '/admin/user-management' },
-              { icon: User, label: 'Customers', path: '/admin/customers' },
-            ]
+          { 
+            icon: Users, 
+            label: 'User Management', 
+            path: '/admin/user-management',
+            standalone: true 
           },
-          appointmentManagement: {
-            icon: Calendar,
-            label: 'Appointment Management',
-            items: [
-              { icon: Calendar, label: 'Appointments', path: '/admin/appointments' },
-              { icon: Clock, label: 'Timeslots', path: '/admin/timeslots' },
-              { icon: FileText, label: 'Job Cards', path: '/admin/job-cards' },
-            ]
+          { 
+            icon: User, 
+            label: 'Customers', 
+            path: '/admin/customers',
+            standalone: true 
           },
-          vehicleManagement: {
-            icon: Car,
-            label: 'Vehicle Management',
-            items: [
-              { icon: Car, label: 'Vehicles', path: '/admin/vehicles' },
-            ]
+          { 
+            icon: Calendar, 
+            label: 'Appointments', 
+            path: '/admin/appointments',
+            standalone: true 
           },
-          inventoryManagement: {
-            icon: Package,
-            label: 'Inventory Management',
-            items: [
-              { icon: Package, label: 'Parts Inventory', path: '/admin/parts' },
-              { icon: Layers, label: 'Categories', path: '/admin/categories' },
-            ]
+          { 
+            icon: Clock, 
+            label: 'Timeslots', 
+            path: '/admin/timeslots',
+            standalone: true 
           },
-          jobManagement: {
-            icon: Briefcase,
-            label:' Service Management',
-            items: [
-              { icon: ClipboardList, label: 'Services', path: '/admin/services' },
-            ]
+          { 
+            icon: Car, 
+            label: 'Vehicles', 
+            path: '/admin/vehicles',
+            standalone: true 
           },
-          financialManagement: {
-            icon: DollarSign,
-            label: 'Financial Management',
-            items: [
-              { icon: InvoiceIcon, label: 'Invoicing', path: '/admin/invoicing' },
-            ]
+          { 
+            icon: Package, 
+            label: 'Parts Inventory', 
+            path: '/admin/parts',
+            standalone: true 
           },
-          profile: { 
+          { 
+            icon: Layers, 
+            label: 'Categories', 
+            path: '/admin/categories',
+            standalone: true 
+          },
+          { 
+            icon: Wrench, 
+            label: 'Services', 
+            path: '/admin/services',
+            standalone: true 
+          },
+          { 
+            icon: ClipboardList, 
+            label: 'Job Cards', 
+            path: '/admin/job-cards',
+            standalone: true 
+          },
+          { 
             icon: User, 
             label: 'Profile', 
             path: '/profile',
             standalone: true 
           },
-        };
+        ];
       case USER_ROLES.TECHNICIAN:
         return [
-          { icon: Home, label: 'Dashboard', path: '/technician' },
-          { icon: Clock, label: 'My Schedule', path: '/technician/schedule' },
-          { icon: Calendar, label: 'Appointments', path: '/technician/appointments' },
-          { icon: Wrench, label: 'Job Cards', path: '/technician/job-cards' },
-          { icon: ClipboardList, label: 'Job Card Items', path: '/technician/job-card-items' },
-          { icon: Package, label: 'Parts Inventory', path: '/technician/parts' },
-          { icon: Car, label: 'Vehicles', path: '/technician/vehicles' },
-          { icon: Layers, label: 'Categories', path: '/technician/categories' },
-          { icon: User, label: 'Profile', path: '/profile' },
+          { 
+            icon: ClipboardList, 
+            label: 'Job Cards', 
+            path: '/technician/job-cards',
+            standalone: true 
+          },
+          { 
+            icon: Package, 
+            label: 'Parts Inventory', 
+            path: '/technician/parts',
+            standalone: true 
+          },
+          { 
+            icon: Car, 
+            label: 'Vehicles', 
+            path: '/technician/vehicles',
+            standalone: true 
+          },
+          { 
+            icon: User, 
+            label: 'Profile', 
+            path: '/profile',
+            standalone: true 
+          },
         ];
       case USER_ROLES.CUSTOMER:
         return [
-          { icon: Home, label: 'Dashboard', path: '/customer' },
-          { icon: Ticket, label: 'Bookings', path: '/customer/bookings' },
-          { icon: FileText, label: 'Previous Services', path: '/customer/previous-services' },
-          { icon: User, label: 'Profile', path: '/profile' },
+          { 
+            icon: Home, 
+            label: 'Dashboard', 
+            path: '/customer',
+            standalone: true 
+          },
+          { 
+            icon: Calendar, 
+            label: 'Bookings', 
+            path: '/customer/bookings',
+            standalone: true 
+          },
+          { 
+            icon: FileText, 
+            label: 'Previous Services', 
+            path: '/customer/previous-services',
+            standalone: true 
+          },
+          { 
+            icon: Car, 
+            label: 'My Vehicles', 
+            path: '/customer/vehicles',
+            standalone: true 
+          },
+          { 
+            icon: Layers, 
+            label: 'Service Categories', 
+            path: '/customer/categories',
+            standalone: true 
+          },
+          { 
+            icon: User, 
+            label: 'Profile', 
+            path: '/profile',
+            standalone: true 
+          },
         ];
       default:
         return [];
@@ -148,103 +189,24 @@ const Sidebar = ({ onLogout }) => {
   const menuItems = getMenuItems();
 
   const renderMenuItem = (item, key) => {
-    if (user?.role === USER_ROLES.ADMIN) {
-      if (item.standalone) {
-        const isActive = location.pathname === item.path;
-        const Icon = item.icon;
-        
-        return (
-          <Link
-            key={key}
-            to={item.path}
-            className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
-              isActive
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`}
-            onClick={() => setIsMobileOpen(false)}
-          >
-            <Icon className="h-5 w-5" />
-            {isSidebarVisible && <span className="ml-3">{item.label}</span>}
-          </Link>
-        );
-      } else {
-        const Icon = item.icon;
-        const isExpanded = expandedCategories[key];
-        const hasActiveChild = item.items?.some(child => location.pathname === child.path);
-        const isExpandedComputed = isExpanded || hasActiveChild;
-        const parentActiveClass = hasActiveChild ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white';
-
-        return (
-          <div key={key} className="mb-2">
-            <button
-              onClick={() => toggleCategory(key)}
-              className={`flex items-center justify-between w-full px-4 py-3 rounded-lg transition-colors ${parentActiveClass}`}
-            >
-              <div className="flex items-center">
-                {/* small left indicator when a child is active */}
-                {isSidebarVisible && (
-                  <div className={`w-1 h-5 rounded mr-3 ${hasActiveChild ? 'bg-blue-300' : 'bg-transparent'}`} />
-                )}
-                <div className="flex items-center">
-                  <Icon className="h-5 w-5 flex-shrink-0" />
-                  {isSidebarVisible && <span className="ml-3 font-medium">{item.label}</span>}
-                </div>
-              </div>
-              {isSidebarVisible && (
-                <ChevronRight 
-                  className={`h-4 w-4 transition-transform ${isExpandedComputed ? 'rotate-90' : ''}`} 
-                />
-              )}
-            </button>
-            
-            {isExpandedComputed && isSidebarVisible && item.items && (
-              <div className="ml-6 mt-1 space-y-1">
-                {item.items.map((child, childIndex) => {
-                  const ChildIcon = child.icon;
-                  const isChildActive = location.pathname === child.path;
-                  
-                  return (
-                    <Link
-                      key={`${key}-${childIndex}`}
-                      to={child.path}
-                      className={`flex items-center px-4 py-3 rounded-lg transition-colors text-sm ${
-                        isChildActive
-                          ? 'bg-blue-600 text-white'
-                          : 'text-gray-200 hover:bg-gray-700 hover:text-white'
-                      }`}
-                      onClick={() => setIsMobileOpen(false)}
-                    >
-                      <ChildIcon className={`h-5 w-5 ${isChildActive ? 'text-white' : ''}`} />
-                      <span className="ml-3">{child.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      }
-    } else {
-      const isActive = location.pathname === item.path;
-      const Icon = item.icon;
-      
-      return (
-        <Link
-          key={key}
-          to={item.path}
-          className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
-            isActive
-              ? 'bg-blue-600 text-white'
-              : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-          }`}
-          onClick={() => setIsMobileOpen(false)}
-        >
-          <Icon className="h-5 w-5" />
-          {isSidebarVisible && <span className="ml-3">{item.label}</span>}
-        </Link>
-      );
-    }
+    const isActive = location.pathname === item.path;
+    const Icon = item.icon;
+    
+    return (
+      <Link
+        key={key}
+        to={item.path}
+        className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
+          isActive
+            ? 'bg-blue-600 text-white'
+            : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+        }`}
+        onClick={() => setIsMobileOpen(false)}
+      >
+        <Icon className="h-5 w-5" />
+        {isSidebarVisible && <span className="ml-3">{item.label}</span>}
+      </Link>
+    );
   };
 
   return (
@@ -282,8 +244,14 @@ const Sidebar = ({ onLogout }) => {
               <div className="leading-tight">
                 <h1 className="text-lg font-extrabold text-white tracking-tight">AutoMech</h1>
                 <div className="mt-1 flex items-center gap-2">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-xs text-blue-100 border border-white/5 font-medium">{String(user?.role || '').toUpperCase()}</span>
-                  <span className="text-xs text-gray-400">Admin dashboard</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-xs text-blue-100 border border-white/5 font-medium">
+                    {String(user?.role || '').toUpperCase()}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {user?.role === USER_ROLES.TECHNICIAN ? 'Technician portal' : 
+                     user?.role === USER_ROLES.ADMIN ? 'Admin dashboard' : 
+                     'Customer dashboard'}
+                  </span>
                 </div>
               </div>
             )}
@@ -302,18 +270,22 @@ const Sidebar = ({ onLogout }) => {
         </div>
 
         <nav className="space-y-2 flex-1">
-          {user?.role === USER_ROLES.ADMIN ? (
-            Object.entries(menuItems).map(([key, item]) => 
-              renderMenuItem(item, key)
-            )
-          ) : (
-            menuItems.map((item, index) => 
-              renderMenuItem(item, index)
-            )
+          {menuItems.map((item, index) => 
+            renderMenuItem(item, index)
           )}
         </nav>
 
         <div className="mt-auto pt-4 border-t border-gray-700">
+          <div className="flex items-center px-4 py-3 text-gray-300 mb-2">
+            <User className="h-5 w-5" />
+            {isSidebarVisible && (
+              <div className="ml-3">
+                <p className="text-sm font-medium">{user?.name || user?.username || 'User'}</p>
+                <p className="text-xs text-gray-400">{user?.email || ''}</p>
+              </div>
+            )}
+          </div>
+          
           <button
             onClick={handleLogout}
             className="flex items-center w-full px-4 py-3 text-gray-300 hover:bg-red-600 hover:text-white rounded-lg transition-colors"

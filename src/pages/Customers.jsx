@@ -10,7 +10,7 @@ import {
   EyeOutlined, EditOutlined, DeleteOutlined, UserOutlined,
   TeamOutlined, CheckCircleOutlined, CloseCircleOutlined,
   ExclamationCircleOutlined, PhoneOutlined, MailOutlined,
-  EnvironmentOutlined, RocketOutlined, CheckOutlined
+  EnvironmentOutlined, CheckOutlined
 } from '@ant-design/icons';
 import { getAllCustomers, deleteCustomer, activateCustomer, addCustomer } from '../actions/customerActions';
 import { previousService } from '../services/previousService';
@@ -82,21 +82,33 @@ const Customers = () => {
     };
   };
 
-  // Filter customers
-  const filteredCustomers = customers && customers.length > 0 
-    ? customers.filter(customer => {
-        const statusDetails = getStatusDetails(customer);
-        const matchesSearch = 
-          customer.C_FullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          customer.C_Email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          customer.C_Phone?.includes(searchTerm) ||
-          customer.C_Address?.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        if (statusFilter === 'all') return matchesSearch;
-        if (statusFilter === 'active') return statusDetails.isActive && matchesSearch;
-        if (statusFilter === 'inactive') return !statusDetails.isActive && matchesSearch;
-        return matchesSearch;
-      })
+  // Sort customers - active first
+  const sortedAndFilteredCustomers = customers && customers.length > 0 
+    ? [...customers]
+        .sort((a, b) => {
+          const statusA = getStatusDetails(a);
+          const statusB = getStatusDetails(b);
+          
+          // Active customers first
+          if (statusA.isActive && !statusB.isActive) return -1;
+          if (!statusA.isActive && statusB.isActive) return 1;
+          
+          // Then sort by name
+          return (a.C_FullName || '').localeCompare(b.C_FullName || '');
+        })
+        .filter(customer => {
+          const statusDetails = getStatusDetails(customer);
+          const matchesSearch = 
+            customer.C_FullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            customer.C_Email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            customer.C_Phone?.includes(searchTerm) ||
+            customer.C_Address?.toLowerCase().includes(searchTerm.toLowerCase());
+          
+          if (statusFilter === 'all') return matchesSearch;
+          if (statusFilter === 'active') return statusDetails.isActive && matchesSearch;
+          if (statusFilter === 'inactive') return !statusDetails.isActive && matchesSearch;
+          return matchesSearch;
+        })
     : [];
 
   // Count customers by status
@@ -368,14 +380,6 @@ const Customers = () => {
               onClick={() => toggleRowExpansion(record)}
               className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center"
             />
-            <Tooltip title="View Previous Services">
-              <Button
-                type="text"
-                onClick={() => openPrevServices(record)}
-                icon={<RocketOutlined className="text-purple-600" />}
-                className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center"
-              />
-            </Tooltip>
           </div>
         </div>
 
@@ -478,7 +482,7 @@ const Customers = () => {
     {
       title: <span className="text-sm font-semibold text-gray-700">Actions</span>,
       key: 'actions',
-      width: 150,
+      width: 120,
       render: (_, record) => {
         const statusDetails = getStatusDetails(record);
         
@@ -527,15 +531,6 @@ const Customers = () => {
                 className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center"
               />
             </Dropdown>
-
-            <Tooltip title="View Previous Services">
-              <Button
-                type="text"
-                onClick={() => openPrevServices(record)}
-                icon={<RocketOutlined className="text-purple-600" />}
-                className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center"
-              />
-            </Tooltip>
           </div>
         );
       },
@@ -592,7 +587,7 @@ const Customers = () => {
               <Button 
                 icon={<PlusOutlined />} 
                 onClick={() => setIsAddModalVisible(true)}
-                className="bg-green-600 hover:bg-green-700 text-white border-0 rounded-lg h-10 px-4 font-medium"
+                className="bg-white text-blue-600 hover:bg-gray-100 border-0 rounded-lg h-10 px-4 font-medium"
               >
                 {screens.xs ? '' : 'Add Customer'}
               </Button>
@@ -704,7 +699,7 @@ const Customers = () => {
             
             <div className="mt-2">
               <Text className="text-xs font-medium text-gray-600">
-                Showing {filteredCustomers.length} of {customerCounts.total} customers
+                Showing {sortedAndFilteredCustomers.length} of {customerCounts.total} customers
               </Text>
             </div>
           </Card>
@@ -733,8 +728,8 @@ const Customers = () => {
           {/* Mobile View */}
           {!screens.md && (
             <div className="md:hidden">
-              {filteredCustomers.length > 0 ? (
-                filteredCustomers.map(record => renderMobileCard(record))
+              {sortedAndFilteredCustomers.length > 0 ? (
+                sortedAndFilteredCustomers.map(record => renderMobileCard(record))
               ) : (
                 <div className="text-center py-12">
                   <UserOutlined className="text-4xl text-gray-300 mb-4" />
@@ -752,7 +747,7 @@ const Customers = () => {
           {screens.md && (
             <Table 
               columns={columns} 
-              dataSource={filteredCustomers} 
+              dataSource={sortedAndFilteredCustomers} 
               rowKey="C_CustomerID"
               pagination={{
                 pageSize: 10,

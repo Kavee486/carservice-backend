@@ -14,6 +14,16 @@ export const fetchAllJobCards = async () => {
   }
 };
 
+// Function to fetch all technicians
+export const fetchAllTechnicians = async () => {
+  try {
+    const { data } = await axios.get(`Technicians/getAllTechnicians`);
+    return data;
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Function to add a new job card
 export const addJobCard = async (jobCardData) => {
   try {
