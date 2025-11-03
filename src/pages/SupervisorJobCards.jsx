@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { GetAllJobCards } from '../actions/jobCardActions';
+import { GetAllJobCards, UpdateJobCard } from '../actions/jobCardActions';
 import { GetAllJobCardItems } from '../actions/jobCardItemActions';
 import { fetchAllParts, fetchAllServices } from '../services/jobCardItemServices';
 import { updateBookingServices, addBookingParts, getBookingPartsByBookingID, addJobCard as addJobCardService } from '../services/jobCardServices';
@@ -21,11 +21,13 @@ const SupervisorJobCards = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [currentBookingId, setCurrentBookingId] = useState(null);
   const [selectedServices, setSelectedServices] = useState([]);
+  const [selectedStatus, setSelectedStatus] = useState('In Progress');
   const [selectedPartsRows, setSelectedPartsRows] = useState([]);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [serviceFilter, setServiceFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [bookingPartsMap, setBookingPartsMap] = useState({});
+  const [bookingServicesMap, setBookingServicesMap] = useState({});
   const [totalsMap, setTotalsMap] = useState({});
 
   // simple local helpers
@@ -33,6 +35,30 @@ const SupervisorJobCards = () => {
     const p = partsList.find(x => String(x?.P_PartID) === String(partId));
     return p?.P_PartName || `#${partId}`;
   };
+
+  // If servicesList just loaded and modal is open but we don't have selectedServices,
+  // try mapping ServiceNames -> IDs again so services tick correctly.
+  useEffect(() => {
+    if (!modalOpen || !currentBookingId) return;
+    try {
+      const stored = localStorage.getItem(`jobcard_selected_services_${currentBookingId}`);
+      if (stored) return; // already set
+      if (Array.isArray(jobCards) && jobCards.length > 0 && Array.isArray(servicesList)) {
+        const jc = jobCards.find(x => String(x.J_BookingID) === String(currentBookingId));
+        if (jc && jc.ServiceNames && (!selectedServices || selectedServices.length === 0)) {
+          const names = String(jc.ServiceNames).split(',').map(s => s.trim()).filter(Boolean);
+          const svcIds = [];
+          names.forEach(n => {
+            const s = servicesList.find(x => String(x?.S_ServiceName).toLowerCase() === String(n).toLowerCase());
+            if (s) svcIds.push(String(s.S_ServiceID));
+          });
+          if (svcIds.length > 0) setSelectedServices(svcIds);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [servicesList, modalOpen, currentBookingId, jobCards, selectedServices]);
 
   const formatCurrency = (value) => {
     const num = parseFloat(value || 0);
@@ -68,11 +94,73 @@ const SupervisorJobCards = () => {
 
   const openEditForBooking = async (bookingId) => {
     setCurrentBookingId(bookingId);
-    // load existing services selection stored under localStorage or from jobCards
+    // Prefer authoritative data from jobCards (ServiceIDs or ServiceNames) when available.
+    // Fall back to localStorage only if job card doesn't contain service data.
+    try {
+      let initialized = false;
+      if (Array.isArray(jobCards) && jobCards.length > 0) {
+        const jc = jobCards.find(x => String(x.J_BookingID) === String(bookingId));
+        if (jc) {
+          // set initial status if available
+          if (jc.J_JobCardStatus) setSelectedStatus(jc.J_JobCardStatus);
+
+          // try to load ServiceIDs directly
+          let svcIds = [];
+          if (Array.isArray(jc.ServiceIDs) && jc.ServiceIDs.length > 0) {
+            svcIds = jc.ServiceIDs.map(id => String(id));
+          } else if (jc.ServiceIDs && typeof jc.ServiceIDs === 'string') {
+            svcIds = String(jc.ServiceIDs).split(',').map(s => s.trim()).filter(Boolean);
+          } else if (jc.ServiceNames) {
+            const names = String(jc.ServiceNames).split(',').map(s => s.trim()).filter(Boolean);
+            names.forEach(n => {
+              const s = servicesList.find(x => String(x?.S_ServiceName).toLowerCase() === String(n).toLowerCase());
+              if (s) svcIds.push(String(s.S_ServiceID));
+            });
+          }
+
+          if (svcIds.length > 0) {
+            setSelectedServices(svcIds);
+            initialized = true;
+          }
+        }
+      }
+
+      if (!initialized) {
+        const stored = localStorage.getItem(`jobcard_selected_services_${bookingId}`);
+        if (stored) setSelectedServices(JSON.parse(stored));
+      }
+    } catch (e) {}
+
+    // if not in localStorage try to initialize from the jobCards data (ServiceIDs or ServiceNames)
     try {
       const stored = localStorage.getItem(`jobcard_selected_services_${bookingId}`);
-      if (stored) setSelectedServices(JSON.parse(stored));
-    } catch (e) {}
+      if (!stored && Array.isArray(jobCards) && jobCards.length > 0) {
+        const jc = jobCards.find(x => String(x.J_BookingID) === String(bookingId));
+        if (jc) {
+          // set status from job card when available
+          if (jc.J_JobCardStatus) setSelectedStatus(jc.J_JobCardStatus);
+
+          // try to load ServiceIDs directly
+          let svcIds = [];
+          if (Array.isArray(jc.ServiceIDs) && jc.ServiceIDs.length > 0) {
+            svcIds = jc.ServiceIDs.map(id => String(id));
+          } else if (jc.ServiceIDs && typeof jc.ServiceIDs === 'string') {
+            svcIds = String(jc.ServiceIDs).split(',').map(s => s.trim()).filter(Boolean);
+          } else if (jc.ServiceNames) {
+            // map names -> IDs using servicesList
+            const names = String(jc.ServiceNames).split(',').map(s => s.trim()).filter(Boolean);
+            names.forEach(n => {
+              const s = servicesList.find(x => String(x?.S_ServiceName).toLowerCase() === String(n).toLowerCase());
+              if (s) svcIds.push(String(s.S_ServiceID));
+            });
+          }
+
+          if (svcIds.length > 0) setSelectedServices(svcIds);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
 
     // load parts for booking
     try {
@@ -113,13 +201,59 @@ const SupervisorJobCards = () => {
     fetchAllBookingParts();
   }, [jobCards]);
 
+  // Build a map of bookingId -> service names using jobCards data or ServiceIDs
+  useEffect(() => {
+    try {
+      if (!Array.isArray(jobCards) || jobCards.length === 0) return;
+      const sMap = {};
+      for (const jc of jobCards) {
+        const bookingId = String(jc.J_BookingID || '');
+        if (!bookingId) continue;
+        let names = [];
+        if (Array.isArray(jc.ServiceIDs) && jc.ServiceIDs.length > 0) {
+          names = jc.ServiceIDs.map(id => {
+            const svc = servicesList.find(x => String(x?.S_ServiceID) === String(id));
+            return svc?.S_ServiceName || String(id);
+          });
+        } else if (jc.ServiceIDs && typeof jc.ServiceIDs === 'string') {
+          const ids = String(jc.ServiceIDs).split(',').map(s => s.trim()).filter(Boolean);
+          names = ids.map(id => {
+            const svc = servicesList.find(x => String(x?.S_ServiceID) === String(id));
+            return svc?.S_ServiceName || String(id);
+          });
+        } else if (jc.ServiceNames) {
+          names = String(jc.ServiceNames).split(',').map(s => s.trim()).filter(Boolean);
+        }
+        if (names.length > 0) sMap[bookingId] = names;
+      }
+      setBookingServicesMap(sMap);
+    } catch (e) {
+      // ignore
+    }
+  }, [jobCards, servicesList]);
+
   const toggleService = (id) => {
     setSelectedServices(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  // persist selected services like admin page so checked items are remembered
+  useEffect(() => {
+    try {
+      localStorage.setItem('jobcard_selected_services_temp', JSON.stringify(selectedServices));
+      if (currentBookingId) localStorage.setItem(`jobcard_selected_services_${currentBookingId}`, JSON.stringify(selectedServices));
+    } catch (e) {
+      // ignore localStorage errors
+    }
+  }, [selectedServices, currentBookingId]);
+
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!currentBookingId) return;
+    // Require supervisor to mark job as Completed before submitting
+    if (String(selectedStatus).toLowerCase() !== 'completed') {
+      alert('Please set Status to "Job Done" before updating the job card.');
+      return;
+    }
     setLoadingSubmit(true);
     try {
       // Update booking services
@@ -128,7 +262,15 @@ const SupervisorJobCards = () => {
   const inProgressJobCards = (jobCards || []).filter(jc => String(jc.J_JobCardStatus || '').toLowerCase() === 'in progress');
 
       if (newServiceIds.length > 0) {
-        await updateBookingServices({ J_BookingID: String(currentBookingId), NewServiceIDs: newServiceIds });
+        const respSvc = await updateBookingServices({ J_BookingID: String(currentBookingId), NewServiceIDs: newServiceIds });
+        // update local bookingServicesMap so UI shows added services immediately
+        try {
+          const names = (newServiceIds || []).map(id => {
+            const svc = servicesList.find(x => String(x.S_ServiceID) === String(id) || String(x.S_ServiceID) === String(parseInt(id,10)));
+            return svc?.S_ServiceName || String(id);
+          });
+          setBookingServicesMap(prev => ({ ...prev, [String(currentBookingId)]: names }));
+        } catch (e) {}
         // remove temp storage
         try { localStorage.removeItem(`jobcard_selected_services_${currentBookingId}`); } catch(e){}
       }
@@ -148,11 +290,21 @@ const SupervisorJobCards = () => {
           return s + (parseFloat(svc?.S_BaseCharge || 0) || 0);
         }, 0);
         const grandTotal = svcTotal + partsTotal;
-        const respAdd = await addJobCardService({ J_BookingID: String(currentBookingId), J_CreatedDate: dayjs().format('YYYY-MM-DD'), J_Technician: '', J_JobCardStatus: 'In Progress', Quantity: partsQty, Price: parseFloat(grandTotal.toFixed(2)) });
+        const payloadForAdd = { J_BookingID: String(currentBookingId), J_CreatedDate: dayjs().format('YYYY-MM-DD'), J_Technician: '', J_JobCardStatus: selectedStatus || 'In Progress', Quantity: partsQty, Price: parseFloat(grandTotal.toFixed(2)) };
+        const respAdd = await addJobCardService(payloadForAdd);
         // update local totals cache so table shows new totals immediately
         try {
-          setTotalsMap(prev => ({ ...prev, [String(currentBookingId)]: { Quantity: partsQty, Price: parseFloat(grandTotal.toFixed(2)), J_JobCardStatus: 'In Progress' } }));
+          setTotalsMap(prev => ({ ...prev, [String(currentBookingId)]: { Quantity: partsQty, Price: parseFloat(grandTotal.toFixed(2)), J_JobCardStatus: selectedStatus || 'In Progress' } }));
         } catch (e) {}
+        // If supervisor set status to Completed, call UpdateJobCard so admin sees the status update
+        try {
+          if (selectedStatus && String(selectedStatus).toLowerCase() === 'job done') {
+            // mark job as Job Done so admin can review and then mark Completed
+            await dispatch(UpdateJobCard({ J_BookingID: String(currentBookingId), J_JobCardStatus: 'Job Done' }));
+          }
+        } catch (e) {
+          // non-blocking
+        }
       } catch (e) {
         // non-blocking
       }
@@ -198,16 +350,22 @@ const SupervisorJobCards = () => {
     return Array.from(map.values());
   })();
 
-  // Filters: only In Progress job cards for supervisors and search term
+  // Filters: normally only In Progress job cards for supervisors and search term.
+  // Additionally allow cards where the supervisor has recently added services/parts (tracked in totalsMap or bookingServicesMap)
   const filteredJobCards = dedupedJobCards && dedupedJobCards.length > 0
     ? dedupedJobCards.filter(jobCard => {
-      // show only In Progress
-      if (String(jobCard.J_JobCardStatus || '').toLowerCase() !== 'in progress') return false;
+      const bookingKey = String(jobCard.J_BookingID || '').toString();
+      const status = String(jobCard.J_JobCardStatus || '').toLowerCase();
+
+      // show if In Progress OR if we have local totals/services that indicate supervisor activity
+      const showBecauseTotals = totalsMap && totalsMap[bookingKey];
+      const showBecauseServices = bookingServicesMap && bookingServicesMap[bookingKey] && bookingServicesMap[bookingKey].length > 0;
+      if (status !== 'in progress' && !showBecauseTotals && !showBecauseServices) return false;
+
       const term = String(searchTerm || '').toLowerCase();
       if (!term) return true;
       const bookingId = String(jobCard.J_BookingID || '').toLowerCase();
       const technician = String(jobCard.J_Technician || '').toLowerCase();
-      const status = String(jobCard.J_JobCardStatus || '').toLowerCase();
       const services = String(jobCard.ServiceNames || '').toLowerCase();
       const itemsForCard = Array.isArray(jobCardItems) ? jobCardItems.filter(it => String(it.J_JobCardID) === String(jobCard.J_JobCardID)) : [];
       const partsString = itemsForCard.map(it => {
@@ -357,13 +515,16 @@ const SupervisorJobCards = () => {
                           <td className="py-4 px-4 text-base text-gray-700">{new Date(jobCard.J_CreatedDate).toLocaleDateString()}</td>
                           <td className="py-4 px-4 text-base text-gray-700">{jobCard.J_Technician || 'Unassigned'}</td>
                           <td className="py-4 px-4 align-top">
-                            <div className="flex flex-col gap-2 max-w-xs">
-                              {(String(jobCard.ServiceNames || '').split(',').map(s => s.trim()).filter(Boolean)).map((svc, idx) => (
-                                <div key={idx} className="flex items-center justify-start gap-3">
-                                  <span className="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-gray-50 text-gray-800 border border-gray-100 shadow-sm truncate">{svc}</span>
-                                </div>
-                              ))}
-                            </div>
+                              <div className="flex flex-col gap-2 max-w-xs">
+                                {((bookingServicesMap[String(jobCard.J_BookingID)] || []).length > 0
+                                  ? bookingServicesMap[String(jobCard.J_BookingID)]
+                                  : (String(jobCard.ServiceNames || '').split(',').map(s => s.trim()).filter(Boolean))
+                                ).map((svc, idx) => (
+                                  <div key={idx} className="flex items-center justify-start gap-3">
+                                    <span className="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-gray-50 text-gray-800 border border-gray-100 shadow-sm truncate">{svc}</span>
+                                  </div>
+                                ))}
+                              </div>
                           </td>
 
                           {/* Parts aggregation (use bookingPartsMap or jobCardItems) */}
@@ -498,11 +659,20 @@ const SupervisorJobCards = () => {
                 <div className="flex items-start justify-between">
                   <div>
                     <h2 className="text-2xl font-semibold">Edit Job Card - Booking {currentBookingId}</h2>
-                    <p className="text-sm text-gray-500">Edit services and parts below. You cannot change job status here.</p>
+                    <p className="text-sm text-gray-500">Edit services and parts below. You can change job status here.</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <button type="button" onClick={() => setModalOpen(false)} className="text-gray-500 hover:text-gray-700">Close</button>
                   </div>
+                </div>
+
+                {/* Status selector for supervisor: In Progress -> Completed (Job Done) */}
+                <div className="mt-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className="w-56 px-3 py-2 border border-gray-200 rounded-md text-sm">
+                    <option value="In Progress">In Progress</option>
+                    <option value="Job Done">Job Done</option>
+                  </select>
                 </div>
 
                 {/* Services panel */}
@@ -599,9 +769,21 @@ const SupervisorJobCards = () => {
                   <div className="text-base font-bold text-gray-800">Grand Total: <span className="text-2xl text-indigo-700">{(() => { const svcTotal = (selectedServices||[]).reduce((s,id)=>{ const svc=servicesList.find(x=>String(x.S_ServiceID)===String(id)); return s + (parseFloat(svc?.S_BaseCharge||0)||0); },0); const partsTotal = selectedPartsRows.reduce((s,r)=> s + ((parseFloat(r.unitPrice||0)||0)*(parseInt(r.qty||0,10)||0)),0); return `Rs ${(svcTotal+partsTotal).toFixed(2)}` })()}</span></div>
                 </div>
 
-                <div className="flex justify-end gap-3">
-                  <button type="button" onClick={() => setModalOpen(false)} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">Cancel</button>
-                  <button type="submit" disabled={loadingSubmit} className="px-6 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg shadow-md">{loadingSubmit? 'Saving...' : 'Update Job Card'}</button>
+                <div className="flex flex-col md:flex-row items-end justify-end gap-3">
+                  <div className="text-xs text-gray-500 md:mr-2">
+                    Note: to complete the job you must set Status to "Job Done" before updating.
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => setModalOpen(false)} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">Cancel</button>
+                    <button
+                      type="submit"
+                      disabled={loadingSubmit || String(selectedStatus).toLowerCase() !== 'completed'}
+                      title={String(selectedStatus).toLowerCase() !== 'completed' ? 'Set Status to Job Done to enable update' : ''}
+                      className={`px-6 py-2 text-white rounded-lg shadow-md ${loadingSubmit || String(selectedStatus).toLowerCase() !== 'completed' ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-blue-500 to-indigo-600'}`}
+                    >
+                      {loadingSubmit ? 'Saving...' : 'Update Job Card'}
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
