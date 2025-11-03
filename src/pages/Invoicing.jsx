@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { FileText, Plus, Search, Filter, Edit3, RefreshCw, DollarSign, Calendar, CreditCard, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { FileText, Plus, Search, Filter, Edit3, RefreshCw, Calendar, CreditCard, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { GetAllInvoices, UpdateInvoice } from '../actions/invoiceActions';
 
 const Invoices = () => {
@@ -208,7 +208,7 @@ const Invoices = () => {
                 <div className="text-xl font-bold text-gray-900">{formatCurrency(invoiceStats.totalAmount)}</div>
               </div>
               <div className="p-2 rounded-full bg-green-100 text-green-600">
-                <DollarSign className="h-5 w-5" />
+                {/* Currency label shown in text; Dollar icon removed to use Rs prefix consistently */}
               </div>
             </div>
           </div>
@@ -318,7 +318,6 @@ const Invoices = () => {
                         </td>
                         <td className="py-4 px-4">
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                            <DollarSign className="h-3 w-3 mr-1" />
                             {formatCurrency(invoice.I_TotalAmount)}
                           </span>
                         </td>
