@@ -34,6 +34,7 @@ const JobCards = () => {
   const [selectedServices, setSelectedServices] = useState([]); // array of S_ServiceID
   const [selectedPartsRows, setSelectedPartsRows] = useState([]); // [{ partId, qty, unitPrice }]
   const [serviceFilter, setServiceFilter] = useState('');
+  const [laborCost, setLaborCost] = useState(0);
   // local cache for totals (Quantity/Price/Status) keyed by J_BookingID to reflect
   // newly-sent totals immediately in the UI when backend takes time to reflect them
   const [totalsMap, setTotalsMap] = useState({}); // bookingId -> { Quantity, Price, J_JobCardStatus }
@@ -133,6 +134,7 @@ const JobCards = () => {
     // reset selections
     setSelectedServices([]);
     setSelectedPartsRows([]);
+    setLaborCost(0);
     setIsModalVisible(true);
   };
 
@@ -203,6 +205,13 @@ const JobCards = () => {
       setSelectedServices(svcIds);
     }
     setIsModalVisible(true);
+      // initialize labor cost from existing job card if available
+      try {
+        const l = parseFloat(jobCard?.LaborCost || jobCard?.J_LaborCost || jobCard?.Labor || 0) || 0;
+        setLaborCost(l);
+      } catch (e) {
+        setLaborCost(0);
+      }
   };
 
   const handleDeleteJobCard = async (jobCard) => {
@@ -245,6 +254,7 @@ const JobCards = () => {
         J_CreatedDate: dayjs(values.createdDate).format('YYYY-MM-DD'),
         J_Technician: values.technician,
         J_JobCardStatus: values.jobCardStatus,
+        LaborCost: parseFloat(values.laborCost || laborCost || 0) || 0,
         // include selected services and parts arrays (backend may accept or be wired later)
         Services: selectedServices,
         Parts: selectedPartsRows.map(p => ({ P_PartID: p.partId, Quantity: p.qty, UnitPrice: p.unitPrice }))
@@ -283,7 +293,9 @@ const JobCards = () => {
           const svc = servicesList.find(x => String(x.S_ServiceID) === String(id));
           return s + (parseFloat(svc?.S_BaseCharge || 0) || 0);
         }, 0);
-        const grandTotal = svcTotal + partsTotal;
+        // include labor cost if provided by admin modal
+        const labor = parseFloat(values.laborCost || laborCost || 0) || 0;
+        const grandTotal = svcTotal + partsTotal + labor;
 
         if (bookingId) {
           const payload = {
@@ -291,8 +303,9 @@ const JobCards = () => {
             J_CreatedDate: jobCardData.J_CreatedDate,
             J_Technician: jobCardData.J_Technician,
             J_JobCardStatus: jobCardData.J_JobCardStatus,
-            Quantity: partsQty,
-            Price: parseFloat(grandTotal.toFixed(2))
+              Quantity: partsQty,
+              Price: parseFloat(grandTotal.toFixed(2)),
+              J_LaborCost: parseFloat(labor.toFixed(2))
           };
           try {
             const respAdd = await addJobCardService(payload);
@@ -301,7 +314,7 @@ const JobCards = () => {
               console.log('AddJobCardsDetails stored totals:', respAdd);
               // reflect these totals immediately in the UI while the backend updates
               try {
-                setTotalsMap(prev => ({ ...prev, [String(bookingId)]: { Quantity: payload.Quantity, Price: payload.Price, J_JobCardStatus: payload.J_JobCardStatus } }));
+                  setTotalsMap(prev => ({ ...prev, [String(bookingId)]: { Quantity: payload.Quantity, Price: payload.Price, J_JobCardStatus: payload.J_JobCardStatus, LaborCost: payload.J_LaborCost } }));
               } catch (e) {}
             } else {
               console.warn('AddJobCardsDetails returned non-200', respAdd);
@@ -728,7 +741,18 @@ const JobCards = () => {
                                       <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">{displayQty}</span>
                                     </td>
                                     <td className="py-4 px-4">
-                                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">{formatCurrency(displayPrice)}</span>
+                                      <div className="flex flex-col">
+                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">{formatCurrency(displayPrice)}</span>
+                                        {(() => {
+                                          const laborVal = (totalsOverride && totalsOverride.LaborCost !== undefined) ? totalsOverride.LaborCost : (jobCard?.J_LaborCost ?? jobCard?.LaborCost ?? 0);
+                                          if (laborVal && parseFloat(laborVal) > 0) {
+                                            return (
+                                              <span className="mt-1 text-xs text-gray-600">Labor: <span className="font-medium text-gray-800">{formatCurrency(laborVal)}</span></span>
+                                            );
+                                          }
+                                          return null;
+                                        })()}
+                                      </div>
                                     </td>
                               </>
                             );
@@ -789,7 +813,18 @@ const JobCards = () => {
                                 <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">{displayQtyItems}</span>
                               </td>
                               <td className="py-4 px-4">
-                                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">{formatCurrency(displayPriceItems)}</span>
+                                <div className="flex flex-col">
+                                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">{formatCurrency(displayPriceItems)}</span>
+                                  {(() => {
+                                    const laborVal = (totalsOverride && totalsOverride.LaborCost !== undefined) ? totalsOverride.LaborCost : (jobCard?.J_LaborCost ?? jobCard?.LaborCost ?? 0);
+                                    if (laborVal && parseFloat(laborVal) > 0) {
+                                      return (
+                                        <span className="mt-1 text-xs text-gray-600">Labor: <span className="font-medium text-gray-800">{formatCurrency(laborVal)}</span></span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
                               </td>
                             </>
                           );
@@ -1105,6 +1140,23 @@ const JobCards = () => {
           </div>
         </div>
 
+        {/* Labor Cost */}
+        <div className="mt-4 md:col-span-2">
+          <label className="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+            Labor Cost
+          </label>
+          <input
+            name="laborCost"
+            type="number"
+            step="0.01"
+            min="0"
+            value={laborCost}
+            onChange={(e) => setLaborCost(parseFloat(e.target.value || 0) || 0)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 bg-white"
+          />
+          <div className="mt-2 text-sm text-gray-500">Enter labour/labor cost (Rs). This will be included in Grand Total.</div>
+        </div>
+
         {/* Grand Total */}
         <div className="mt-6 text-right bg-gradient-to-r from-indigo-50 to-blue-100 p-4 rounded-lg border border-indigo-100">
           <div className="text-base font-bold text-gray-800">
@@ -1122,7 +1174,8 @@ const JobCards = () => {
                       (parseInt(r.qty || 0, 10) || 0)),
                   0
                 );
-                return `Rs ${(svcTotal + partsTotal).toFixed(2)}`;
+                const labor = parseFloat(laborCost || 0) || 0;
+                return `Rs ${(svcTotal + partsTotal + labor).toFixed(2)}`;
               })()}
             </span>
           </div>
