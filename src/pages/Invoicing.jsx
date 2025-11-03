@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { FileText, Plus, Search, Filter, Edit3, RefreshCw, Calendar, CreditCard, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { FileText, Plus, Search, Filter, Edit3, RefreshCw, Calendar, CreditCard, CheckCircle, XCircle, Clock, Printer, Download } from 'lucide-react';
 import { GetAllInvoices, UpdateInvoice } from '../actions/invoiceActions';
 
 const Invoices = () => {
@@ -11,6 +11,9 @@ const Invoices = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [currentInvoice, setCurrentInvoice] = useState(null);
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+  const [previewInvoice, setPreviewInvoice] = useState(null);
+  const previewRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -52,6 +55,75 @@ const Invoices = () => {
 
   const handleRefresh = () => {
     dispatch(GetAllInvoices());
+  };
+
+  const handlePreviewInvoice = (invoice) => {
+    // prepare preview data (use invoice data and any nested jobcard info if present)
+    setPreviewInvoice(invoice);
+    setIsPreviewVisible(true);
+    // small delay to let modal render if needed
+    setTimeout(() => {}, 50);
+  };
+
+  const printPreview = () => {
+    if (!previewInvoice) return;
+    // build simple printable HTML and open in new window
+    const html = buildInvoiceHtml(previewInvoice);
+    const w = window.open('', '_blank');
+    if (!w) return alert('Popup blocked. Allow popups for this site to print the invoice.');
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    // give browser a moment to render
+    setTimeout(() => { w.print(); }, 300);
+  };
+
+  const buildInvoiceHtml = (inv) => {
+    const companyName = 'Premium Auto Care';
+    const logoPath = (typeof window !== 'undefined' && document.querySelector('link[rel="shortcut icon"]')) ? '/AutoDeck Logo Design.png' : '/AutoDeck Logo Design.png';
+    const carImg = '/AutoDeck Logo Design.png';
+    const total = parseFloat(inv.I_TotalAmount || 0).toFixed(2);
+    const date = inv.I_InvoiceDate ? new Date(inv.I_InvoiceDate).toLocaleDateString() : '';
+    return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${inv.I_InvoiceID}</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#222}
+        .invoice-header{display:flex;justify-content:space-between;align-items:center}
+        .company{font-size:24px;font-weight:700;color:#0b63d0}
+        .meta{text-align:right}
+        .line{margin-top:20px;border-top:2px solid #0b63d0}
+        .total{background:#0b63d0;color:#fff;padding:12px;border-radius:6px;margin-top:16px;text-align:right}
+        .logo{max-width:140px}
+        .car-img{max-width:120px;border-radius:8px}
+      </style></head><body>
+      <div class="invoice-header">
+        <div>
+          <img src="${logoPath}" class="logo" alt="logo" />
+          <div class="company">${companyName}</div>
+          <div style="color:#666">Premium services & repairs</div>
+        </div>
+        <div class="meta">
+          <div><strong>Invoice</strong> #${inv.I_InvoiceID}</div>
+          <div>Booking: ${inv.J_BookingID}</div>
+          <div>Date: ${date}</div>
+        </div>
+      </div>
+      <div class="line"></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:20px">
+        <div style="width:65%">
+          <h4>Items</h4>
+          <table width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse">
+            <thead><tr><th style="text-align:left;border-bottom:1px solid #eee">Description</th><th style="text-align:right;border-bottom:1px solid #eee">Amount (Rs)</th></tr></thead>
+            <tbody>
+              <tr><td>Services & Parts</td><td style="text-align:right">Rs ${total}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="width:30%;text-align:center">
+          <img src="${carImg}" class="car-img" alt="car" />
+        </div>
+      </div>
+      <div class="total"><strong>Final Amount: Rs ${total}</strong></div>
+    </body></html>`;
   };
 
   // Format currency as Rs
@@ -342,6 +414,13 @@ const Invoices = () => {
                             >
                               <Edit3 className="h-4 w-4" />
                             </button>
+                            <button
+                              onClick={() => handlePreviewInvoice(invoice)}
+                              className="text-blue-600 hover:text-blue-800 p-2 rounded-lg hover:bg-blue-100"
+                              title="Preview / Print"
+                            >
+                              <Printer className="h-4 w-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -469,6 +548,83 @@ const Invoices = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Invoice Preview / Printable Modal */}
+        {isPreviewVisible && previewInvoice && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-6 z-50 overflow-auto">
+            <div ref={previewRef} className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <div className="text-2xl font-bold text-blue-600">Premium Auto Care</div>
+                  <div className="text-sm text-gray-600">Quality servicing & repairs</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-gray-500">Invoice</div>
+                  <div className="text-lg font-semibold">#{previewInvoice.I_InvoiceID}</div>
+                  <div className="text-xs text-gray-500">Booking: {previewInvoice.J_BookingID}</div>
+                </div>
+              </div>
+
+              <div className="border rounded-lg overflow-hidden mb-4">
+                <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <img src="/AutoDeck Logo Design.png" alt="company" className="h-12 w-12 object-contain rounded" />
+                    <div>
+                      <div className="text-sm font-semibold">Premium Auto Care</div>
+                      <div className="text-xs">No: 123, Vehicle Lane, City</div>
+                    </div>
+                  </div>
+                  <div className="text-right text-sm">
+                    <div className="font-medium">Payment Receipt</div>
+                    <div className="text-xs">{formatDate(previewInvoice.I_InvoiceDate)}</div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-white">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-2">
+                      <h4 className="text-sm font-semibold text-gray-700">Bill To</h4>
+                      <div className="text-sm text-gray-600">Customer</div>
+                    </div>
+                    <div className="text-right">
+                      <img src="/AutoDeck Logo Design.png" alt="car" className="h-20 w-28 object-cover rounded" />
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500 border-b">
+                          <th className="py-2">Description</th>
+                          <th className="py-2 text-right">Amount (Rs)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="py-2">Services & Parts</td>
+                          <td className="py-2 text-right">{formatCurrency(previewInvoice.I_TotalAmount)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-6 flex justify-end">
+                    <div className="w-1/3 text-right">
+                      <div className="text-sm text-gray-500">Subtotal</div>
+                      <div className="text-lg font-semibold">{formatCurrency(previewInvoice.I_TotalAmount)}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end items-center gap-3">
+                <button onClick={() => { setIsPreviewVisible(false); setPreviewInvoice(null); }} className="px-4 py-2 border rounded text-gray-700">Close</button>
+                <button onClick={printPreview} className="px-4 py-2 bg-blue-600 text-white rounded flex items-center gap-2"><Printer className="h-4 w-4"/> Print</button>
+                <button onClick={printPreview} className="px-4 py-2 bg-green-600 text-white rounded flex items-center gap-2"><Download className="h-4 w-4"/> Download PDF</button>
+              </div>
             </div>
           </div>
         )}
