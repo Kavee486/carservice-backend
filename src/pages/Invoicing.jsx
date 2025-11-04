@@ -98,26 +98,34 @@ const Invoices = () => {
     const carImg = '/AutoDeck Logo Design.png';
     const total = parseFloat(inv.I_TotalAmount || 0).toFixed(2);
     const date = inv.I_InvoiceDate ? new Date(inv.I_InvoiceDate).toLocaleDateString() : '';
+    // local helper to format numbers as 'amount Rs' with commas
+    const fmt = (num) => {
+      const n = parseFloat(num || 0) || 0;
+      const parts = n.toFixed(2).split('.');
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      return `${parts.join('.')} `;
+    };
+
     // If preview has local itemized details, render them
     let itemsHtml = '';
     if (inv._localInvoiceDetails) {
       const d = inv._localInvoiceDetails;
       if (Array.isArray(d.Services) && d.Services.length > 0) {
-        itemsHtml += `<tr><td style="font-weight:600">Services</td><td style="text-align:right">Rs ${d.Totals?.servicesTotal?.toFixed(2) || '0.00'}</td></tr>`;
+        itemsHtml += `<tr><td style="font-weight:600;text-align:center">Services</td><td style="text-align:center"><strong>${fmt(d.Totals?.servicesTotal || 0)}</strong></td></tr>`;
         d.Services.forEach(s => {
-          itemsHtml += `<tr><td style="padding-left:12px">${s.name}</td><td style="text-align:right">Rs ${parseFloat(s.price||0).toFixed(2)}</td></tr>`;
+          itemsHtml += `<tr><td style="text-align:center">${s.name}</td><td style="text-align:center"><strong>${fmt(s.price || 0)}</strong></td></tr>`;
         });
       }
       if (Array.isArray(d.Parts) && d.Parts.length > 0) {
-        itemsHtml += `<tr><td style="font-weight:600">Parts</td><td style="text-align:right">Rs ${d.Totals?.partsTotal?.toFixed(2) || '0.00'}</td></tr>`;
+        itemsHtml += `<tr><td style="font-weight:600;text-align:center">Parts</td><td style="text-align:center"><strong>${fmt(d.Totals?.partsTotal || 0)}</strong></td></tr>`;
         d.Parts.forEach(p => {
-          itemsHtml += `<tr><td style="padding-left:12px">${p.name} x ${p.qty}</td><td style="text-align:right">Rs ${parseFloat(p.lineTotal||0).toFixed(2)}</td></tr>`;
+          itemsHtml += `<tr><td style="text-align:center">${p.name} x ${p.qty}</td><td style="text-align:center"><strong>${fmt(p.lineTotal || 0)}</strong></td></tr>`;
         });
       }
       if (typeof d.LabourCost !== 'undefined') {
-        itemsHtml += `<tr><td style="font-weight:600">Labour</td><td style="text-align:right">Rs ${parseFloat(d.LabourCost||0).toFixed(2)}</td></tr>`;
+        itemsHtml += `<tr><td style="font-weight:600;text-align:center">Labour</td><td style="text-align:center"><strong>${fmt(d.LabourCost || 0)}</strong></td></tr>`;
       }
-      itemsHtml += `<tr><td style="font-weight:700">Grand Total</td><td style="text-align:right;font-weight:700">Rs ${parseFloat(d.Totals?.grandTotal||0).toFixed(2)}</td></tr>`;
+      itemsHtml += `<tr><td style="font-weight:700;text-align:center">Grand Total</td><td style="text-align:center;font-weight:700"><strong>${fmt(d.Totals?.grandTotal || 0)}</strong></td></tr>`;
     }
 
     return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${inv.I_InvoiceID}</title>
@@ -128,7 +136,7 @@ const Invoices = () => {
         .meta{text-align:right}
         .line{margin-top:20px;border-top:2px solid #0b63d0}
         .total{background:#0b63d0;color:#fff;padding:12px;border-radius:6px;margin-top:16px;text-align:right}
-        .logo{max-width:140px}
+  .logo{max-width:80px}
         .car-img{max-width:120px;border-radius:8px}
       </style></head><body>
       <div class="invoice-header">
@@ -138,7 +146,7 @@ const Invoices = () => {
           <div style="color:#666">Premium services & repairs</div>
         </div>
         <div class="meta">
-          <div><strong>Invoice</strong> #${inv.I_InvoiceID}</div>
+          <div><strong>Invoice</strong> : ${inv.I_InvoiceID}</div>
           <div>Booking: ${inv.J_BookingID}</div>
           <div>Date: ${date}</div>
         </div>
@@ -148,23 +156,30 @@ const Invoices = () => {
         <div style="width:65%">
           <h4>Items</h4>
           <table width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse">
-            <thead><tr><th style="text-align:left;border-bottom:1px solid #eee">Description</th><th style="text-align:right;border-bottom:1px solid #eee">Amount (Rs)</th></tr></thead>
+            <thead><tr><th style="text-align:center;border-bottom:1px solid #eee">Description</th><th style="text-align:center;border-bottom:1px solid #eee">Amount</th></tr></thead>
             <tbody>
-              ${itemsHtml || `<tr><td>Services & Parts</td><td style="text-align:right">Rs ${total}</td></tr>`}
+              ${itemsHtml || `<tr><td style="text-align:center">Services & Parts</td><td style="text-align:center">${fmt(total)}</td></tr>`}
             </tbody>
           </table>
         </div>
-        <div style="width:30%;text-align:center">
-          <img src="${carImg}" class="car-img" alt="car" />
-        </div>
+        
       </div>
-      <div class="total"><strong>Final Amount: Rs ${inv._localInvoiceDetails ? (inv._localInvoiceDetails.Totals?.grandTotal || total) : total}</strong></div>
+      <div class="total" style="text-align:center"><strong>Final Amount: ${inv._localInvoiceDetails ? fmt(inv._localInvoiceDetails.Totals?.grandTotal || total) : fmt(total)}</strong></div>
+      <div style="margin-top:14px;text-align:center;font-style:italic;opacity:0.6;color:#333">Thanks for choosing us!</div>
     </body></html>`;
   };
 
-  // Format currency as Rs
+  // Format currency (numeric string, no leading currency prefix)
   const formatCurrency = (value) => {
-    return `Rs ${parseFloat(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+    return `${parseFloat(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+  };
+
+  // Format currency with amount first (e.g. "105.00") and thousands separators
+  const formatCurrencyTrailing = (value) => {
+    const n = parseFloat(value || 0) || 0;
+    const parts = n.toFixed(2).split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `${parts.join('.')}`;
   };
 
   // Format date
@@ -569,7 +584,7 @@ const Invoices = () => {
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-500">Invoice</div>
-                  <div className="text-lg font-semibold">#{previewInvoice.I_InvoiceID}</div>
+                  <div className="text-lg font-semibold">": " {previewInvoice.I_InvoiceID}</div>
                   <div className="text-xs text-gray-500">Booking: {previewInvoice.J_BookingID}</div>
                 </div>
               </div>
@@ -577,7 +592,7 @@ const Invoices = () => {
               <div className="border rounded-lg overflow-hidden mb-4">
                 <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <img src="/AutoDeck Logo Design.png" alt="company" className="h-12 w-12 object-contain rounded" />
+                    <img src="/AutoDeck Logo Design.png" alt="company" className="h-10 w-10 object-contain rounded" />
                     <div>
                       <div className="text-sm font-semibold">Premium Auto Care</div>
                       <div className="text-xs">No: 123, Vehicle Lane, City</div>
@@ -590,22 +605,17 @@ const Invoices = () => {
                 </div>
 
                 <div className="p-4 bg-white">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="col-span-2">
-                      <h4 className="text-sm font-semibold text-gray-700">Bill To</h4>
-                      <div className="text-sm text-gray-600">Customer</div>
-                    </div>
-                    <div className="text-right">
-                      <img src="/AutoDeck Logo Design.png" alt="car" className="h-20 w-28 object-cover rounded" />
-                    </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700">Bill To</h4>
+                    <div className="text-sm text-gray-600">Customer</div>
                   </div>
 
                   <div className="mt-4">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm text-center">
                       <thead>
-                        <tr className="text-left text-xs text-gray-500 border-b">
+                        <tr className="text-center text-xs text-gray-500 border-b">
                           <th className="py-2">Description</th>
-                          <th className="py-2 text-right">Amount (Rs)</th>
+                          <th className="py-2">Amount</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -616,12 +626,12 @@ const Invoices = () => {
                               <>
                                 <tr>
                                   <td className="py-2 font-semibold">Services</td>
-                                  <td className="py-2 text-right">{formatCurrency(previewInvoice._localInvoiceDetails.Totals?.servicesTotal || 0)}</td>
+                                  <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.servicesTotal || 0)}</strong></td>
                                 </tr>
                                 {previewInvoice._localInvoiceDetails.Services.map((s, idx) => (
                                   <tr key={`svc-${idx}`}>
-                                    <td className="py-1 pl-4 text-sm">{s.name}</td>
-                                    <td className="py-1 text-right">{formatCurrency(s.price)}</td>
+                                    <td className="py-1 text-center text-sm">{s.name}</td>
+                                    <td className="py-1 text-center"><strong>{formatCurrencyTrailing(s.price)}</strong></td>
                                   </tr>
                                 ))}
                               </>
@@ -632,12 +642,12 @@ const Invoices = () => {
                               <>
                                 <tr>
                                   <td className="py-2 font-semibold">Parts</td>
-                                  <td className="py-2 text-right">{formatCurrency(previewInvoice._localInvoiceDetails.Totals?.partsTotal || 0)}</td>
+                                  <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.partsTotal || 0)}</strong></td>
                                 </tr>
                                 {previewInvoice._localInvoiceDetails.Parts.map((p, idx) => (
                                   <tr key={`part-${idx}`}>
-                                    <td className="py-1 pl-4 text-sm">{p.name} <span className="text-xs text-gray-500">x {p.qty}</span></td>
-                                    <td className="py-1 text-right">{formatCurrency(p.lineTotal)}</td>
+                                    <td className="py-1 text-center text-sm">{p.name} <span className="text-xs text-gray-500">x {p.qty}</span></td>
+                                    <td className="py-1 text-center"><strong>{formatCurrencyTrailing(p.lineTotal)}</strong></td>
                                   </tr>
                                 ))}
                               </>
@@ -647,27 +657,30 @@ const Invoices = () => {
                             {typeof previewInvoice._localInvoiceDetails.LabourCost !== 'undefined' && (
                               <tr>
                                 <td className="py-2 font-semibold">Labour</td>
-                                <td className="py-2 text-right">{formatCurrency(previewInvoice._localInvoiceDetails.LabourCost)}</td>
+                                <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.LabourCost)}</strong></td>
                               </tr>
                             )}
                           </>
                         ) : (
                           <tr>
                             <td className="py-2">Services & Parts</td>
-                            <td className="py-2 text-right">{formatCurrency(previewInvoice.I_TotalAmount)}</td>
+                            <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice.I_TotalAmount)}</strong></td>
                           </tr>
                         )}
                       </tbody>
                     </table>
                   </div>
 
-                  <div className="mt-6 flex justify-end">
-                    <div className="w-1/3 text-right">
+                  <div className="mt-6 flex justify-center">
+                    <div className="w-full text-center">
                       <div className="text-sm text-gray-500">Subtotal</div>
                       <div className="text-lg font-semibold">
-                        {previewInvoice._localInvoiceDetails ? formatCurrency(previewInvoice._localInvoiceDetails.Totals?.grandTotal || 0) : formatCurrency(previewInvoice.I_TotalAmount)}
+                        {previewInvoice._localInvoiceDetails ? formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.grandTotal || 0) : formatCurrencyTrailing(previewInvoice.I_TotalAmount)}
                       </div>
                     </div>
+                  </div>
+                  <div style={{marginTop:12}} className="text-center">
+                    <div style={{fontStyle:'italic', opacity:0.6}} className="text-gray-600">Thanks for choosing us!</div>
                   </div>
                 </div>
               </div>
