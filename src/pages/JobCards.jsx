@@ -265,6 +265,62 @@ const JobCards = () => {
 
         await dispatch(UpdateJobCard(jobCardData));
         alert('Job card updated successfully');
+        // If admin marked this job card as Completed, persist an itemized invoice to localStorage
+        try {
+          if (jobCardData.J_JobCardStatus && String(jobCardData.J_JobCardStatus).toLowerCase() === 'completed') {
+            const bookingId = String(jobCardData.J_BookingID || currentJobCard?.J_BookingID || '');
+            const servicesDetailed = (selectedServices || []).map(id => {
+              const svc = servicesList.find(x => String(x.S_ServiceID) === String(id));
+              return {
+                id: id,
+                name: svc?.S_ServiceName || `Service ${id}`,
+                price: parseFloat(svc?.S_BaseCharge || 0) || 0
+              };
+            });
+
+            const partsDetailed = (selectedPartsRows || []).map(p => {
+              const found = parts.find(x => String(x?.P_PartID) === String(p.partId) || String(x?.P_PartID) === String(p.partId));
+              const unitPrice = parseFloat(p.unitPrice || 0) || 0;
+              const qty = parseInt(p.qty || 0, 10) || 0;
+              return {
+                id: p.partId,
+                name: found?.P_PartName || found?.PartName || `Part ${p.partId}`,
+                unitPrice: unitPrice,
+                qty: qty,
+                lineTotal: parseFloat((unitPrice * qty).toFixed(2))
+              };
+            });
+
+            const servicesTotal = servicesDetailed.reduce((s, it) => s + (parseFloat(it.price || 0) || 0), 0);
+            const partsTotal = partsDetailed.reduce((s, it) => s + (parseFloat(it.lineTotal || 0) || 0), 0);
+            const labour = parseFloat(jobCardData.LaborCost || laborCost || 0) || 0;
+            const grandTotal = parseFloat((servicesTotal + partsTotal + labour).toFixed(2));
+
+            const invoiceObj = {
+              J_BookingID: bookingId,
+              J_CreatedDate: jobCardData.J_CreatedDate || currentJobCard?.J_CreatedDate,
+              J_Technician: jobCardData.J_Technician || currentJobCard?.J_Technician,
+              Services: servicesDetailed,
+              Parts: partsDetailed,
+              LabourCost: parseFloat(labour.toFixed(2)),
+              Totals: {
+                servicesTotal: parseFloat(servicesTotal.toFixed(2)),
+                partsTotal: parseFloat(partsTotal.toFixed(2)),
+                labour: parseFloat(labour.toFixed(2)),
+                grandTotal: grandTotal
+              }
+            };
+
+            try {
+              localStorage.setItem(`invoice_for_booking_${bookingId}`, JSON.stringify(invoiceObj));
+              localStorage.setItem('latest_invoice', JSON.stringify(invoiceObj));
+            } catch (e) {
+              console.warn('Failed saving invoice to localStorage', e);
+            }
+          }
+        } catch (e) {
+          console.warn('Error while saving invoice to localStorage', e);
+        }
         // If admin set status to In Progress, redirect to supervisor edit page for this booking
         try {
           const currentUser = authService.getCurrentUser();

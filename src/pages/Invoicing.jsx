@@ -58,7 +58,23 @@ const Invoices = () => {
   };
 
   const handlePreviewInvoice = (invoice) => {
-    // prepare preview data (use invoice data and any nested jobcard info if present)
+    // Try to enrich invoice preview with locally stored itemized invoice (set when job card completed)
+    try {
+      const key = `invoice_for_booking_${invoice?.J_BookingID}`;
+      const stored = localStorage.getItem(key) || localStorage.getItem('latest_invoice');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && String(parsed.J_BookingID) === String(invoice?.J_BookingID)) {
+          setPreviewInvoice({ ...invoice, _localInvoiceDetails: parsed });
+          setIsPreviewVisible(true);
+          return;
+        }
+      }
+    } catch (e) {
+      // ignore parse/storage errors
+      console.warn('Failed reading local invoice for preview', e);
+    }
+    // fallback to plain invoice object
     setPreviewInvoice(invoice);
     setIsPreviewVisible(true);
     // small delay to let modal render if needed
@@ -84,6 +100,28 @@ const Invoices = () => {
     const carImg = '/AutoDeck Logo Design.png';
     const total = parseFloat(inv.I_TotalAmount || 0).toFixed(2);
     const date = inv.I_InvoiceDate ? new Date(inv.I_InvoiceDate).toLocaleDateString() : '';
+    // If preview has local itemized details, render them
+    let itemsHtml = '';
+    if (inv._localInvoiceDetails) {
+      const d = inv._localInvoiceDetails;
+      if (Array.isArray(d.Services) && d.Services.length > 0) {
+        itemsHtml += `<tr><td style="font-weight:600">Services</td><td style="text-align:right">Rs ${d.Totals?.servicesTotal?.toFixed(2) || '0.00'}</td></tr>`;
+        d.Services.forEach(s => {
+          itemsHtml += `<tr><td style="padding-left:12px">${s.name}</td><td style="text-align:right">Rs ${parseFloat(s.price||0).toFixed(2)}</td></tr>`;
+        });
+      }
+      if (Array.isArray(d.Parts) && d.Parts.length > 0) {
+        itemsHtml += `<tr><td style="font-weight:600">Parts</td><td style="text-align:right">Rs ${d.Totals?.partsTotal?.toFixed(2) || '0.00'}</td></tr>`;
+        d.Parts.forEach(p => {
+          itemsHtml += `<tr><td style="padding-left:12px">${p.name} x ${p.qty}</td><td style="text-align:right">Rs ${parseFloat(p.lineTotal||0).toFixed(2)}</td></tr>`;
+        });
+      }
+      if (typeof d.LabourCost !== 'undefined') {
+        itemsHtml += `<tr><td style="font-weight:600">Labour</td><td style="text-align:right">Rs ${parseFloat(d.LabourCost||0).toFixed(2)}</td></tr>`;
+      }
+      itemsHtml += `<tr><td style="font-weight:700">Grand Total</td><td style="text-align:right;font-weight:700">Rs ${parseFloat(d.Totals?.grandTotal||0).toFixed(2)}</td></tr>`;
+    }
+
     return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${inv.I_InvoiceID}</title>
       <style>
         body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#222}
@@ -114,7 +152,7 @@ const Invoices = () => {
           <table width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse">
             <thead><tr><th style="text-align:left;border-bottom:1px solid #eee">Description</th><th style="text-align:right;border-bottom:1px solid #eee">Amount (Rs)</th></tr></thead>
             <tbody>
-              <tr><td>Services & Parts</td><td style="text-align:right">Rs ${total}</td></tr>
+              ${itemsHtml || `<tr><td>Services & Parts</td><td style="text-align:right">Rs ${total}</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -122,7 +160,7 @@ const Invoices = () => {
           <img src="${carImg}" class="car-img" alt="car" />
         </div>
       </div>
-      <div class="total"><strong>Final Amount: Rs ${total}</strong></div>
+      <div class="total"><strong>Final Amount: Rs ${inv._localInvoiceDetails ? (inv._localInvoiceDetails.Totals?.grandTotal || total) : total}</strong></div>
     </body></html>`;
   };
 
@@ -603,10 +641,54 @@ const Invoices = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="py-2">Services & Parts</td>
-                          <td className="py-2 text-right">{formatCurrency(previewInvoice.I_TotalAmount)}</td>
-                        </tr>
+                        {previewInvoice._localInvoiceDetails ? (
+                          <>
+                            {/* Services section */}
+                            {previewInvoice._localInvoiceDetails.Services && previewInvoice._localInvoiceDetails.Services.length > 0 && (
+                              <>
+                                <tr>
+                                  <td className="py-2 font-semibold">Services</td>
+                                  <td className="py-2 text-right">{formatCurrency(previewInvoice._localInvoiceDetails.Totals?.servicesTotal || 0)}</td>
+                                </tr>
+                                {previewInvoice._localInvoiceDetails.Services.map((s, idx) => (
+                                  <tr key={`svc-${idx}`}>
+                                    <td className="py-1 pl-4 text-sm">{s.name}</td>
+                                    <td className="py-1 text-right">{formatCurrency(s.price)}</td>
+                                  </tr>
+                                ))}
+                              </>
+                            )}
+
+                            {/* Parts section */}
+                            {previewInvoice._localInvoiceDetails.Parts && previewInvoice._localInvoiceDetails.Parts.length > 0 && (
+                              <>
+                                <tr>
+                                  <td className="py-2 font-semibold">Parts</td>
+                                  <td className="py-2 text-right">{formatCurrency(previewInvoice._localInvoiceDetails.Totals?.partsTotal || 0)}</td>
+                                </tr>
+                                {previewInvoice._localInvoiceDetails.Parts.map((p, idx) => (
+                                  <tr key={`part-${idx}`}>
+                                    <td className="py-1 pl-4 text-sm">{p.name} <span className="text-xs text-gray-500">x {p.qty}</span></td>
+                                    <td className="py-1 text-right">{formatCurrency(p.lineTotal)}</td>
+                                  </tr>
+                                ))}
+                              </>
+                            )}
+
+                            {/* Labour section */}
+                            {typeof previewInvoice._localInvoiceDetails.LabourCost !== 'undefined' && (
+                              <tr>
+                                <td className="py-2 font-semibold">Labour</td>
+                                <td className="py-2 text-right">{formatCurrency(previewInvoice._localInvoiceDetails.LabourCost)}</td>
+                              </tr>
+                            )}
+                          </>
+                        ) : (
+                          <tr>
+                            <td className="py-2">Services & Parts</td>
+                            <td className="py-2 text-right">{formatCurrency(previewInvoice.I_TotalAmount)}</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -614,7 +696,9 @@ const Invoices = () => {
                   <div className="mt-6 flex justify-end">
                     <div className="w-1/3 text-right">
                       <div className="text-sm text-gray-500">Subtotal</div>
-                      <div className="text-lg font-semibold">{formatCurrency(previewInvoice.I_TotalAmount)}</div>
+                      <div className="text-lg font-semibold">
+                        {previewInvoice._localInvoiceDetails ? formatCurrency(previewInvoice._localInvoiceDetails.Totals?.grandTotal || 0) : formatCurrency(previewInvoice.I_TotalAmount)}
+                      </div>
                     </div>
                   </div>
                 </div>
