@@ -760,6 +760,40 @@ const JobCards = () => {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </button>
+
+              {/* Admin quick navigation: Parts, Invoice, Services */}
+              <div className="hidden sm:flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/parts')}
+                  title="Parts Inventory"
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-white text-green-700 border border-green-200 rounded-lg hover:shadow-sm transition"
+                >
+                  <Package className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium">Parts</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/invoicing')}
+                  title="Invoice"
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-white text-indigo-700 border border-indigo-200 rounded-lg hover:shadow-sm transition"
+                >
+                  <Tag className="h-4 w-4 text-indigo-600" />
+                  <span className="text-sm font-medium">Invoice</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/services')}
+                  title="Services"
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-white text-blue-700 border border-blue-200 rounded-lg hover:shadow-sm transition"
+                >
+                  <ClipboardList className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium">Services</span>
+                </button>
+              </div>
+
               <button
                 onClick={handleAddJobCard}
                 className="bg-white text-blue-600 rounded-lg hover:bg-blue-50 h-10 px-4 font-medium flex items-center border-0"
@@ -1138,7 +1172,7 @@ const JobCards = () => {
             required
             className="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 bg-white"
           >
-            <option value="Pending">Pending</option>
+            {/* <option value="Pending">Pending</option> */}
             <option value="In Progress">In Progress</option>
             <option value="Completed">Completed</option>
           </select>
