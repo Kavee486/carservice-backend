@@ -276,6 +276,7 @@ const JobCards = () => {
     const formData = new FormData(e.target);
     const values = Object.fromEntries(formData.entries());
 
+    const notifications = []; // collect messages and show one consolidated alert
     try {
       setSubmitLoading(true);
 
@@ -298,7 +299,7 @@ const JobCards = () => {
         jobCardData.J_JobCardID = currentJobCard.J_JobCardID;
 
         await dispatch(UpdateJobCard(jobCardData));
-        alert('Job card updated successfully');
+        notifications.push('Job card updated successfully');
         // If admin marked this job card as Completed, persist an itemized invoice to localStorage
         try {
           if (jobCardData.J_JobCardStatus && String(jobCardData.J_JobCardStatus).toLowerCase() === 'completed') {
@@ -408,21 +409,11 @@ const JobCards = () => {
           console.warn('Error while saving invoice to localStorage', e);
         }
         // If admin set status to In Progress, redirect to supervisor edit page for this booking
-        try {
-          const currentUser = authService.getCurrentUser();
-          if (jobCardData.J_JobCardStatus && String(jobCardData.J_JobCardStatus).toLowerCase() === 'in progress' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'Admin' || currentUser.role === 2 || currentUser.RoleID === 2)) {
-            // navigate to supervisor edit for this booking
-            const bookingId = jobCardData.J_BookingID || currentJobCard?.J_BookingID;
-            if (bookingId) {
-              navigate(`/supervisor/job-cards?edit=${encodeURIComponent(String(bookingId))}`);
-            }
-          }
-        } catch (e) {
-          // ignore navigation errors
-        }
+        // NOTE: we intentionally do NOT navigate the admin away when they set status to In Progress.
+        // The admin wanted to "hold" on the same page while the supervisor receives the job card.
       } else {
         await dispatch(AddJobCard(jobCardData));
-        alert('Job card added successfully');
+        notifications.push('Job card added successfully');
       }
 
       // Also call AddJobCardsDetails endpoint to ensure Quantity/Price fields are stored
@@ -475,18 +466,18 @@ const JobCards = () => {
         if (bookingId && newServiceIds.length > 0) {
           const payload = { J_BookingID: String(bookingId), NewServiceIDs: newServiceIds };
           const resp = await updateBookingServices(payload);
-          if (resp?.StatusCode === 200) {
-            // success
-            // remove localStorage entries for this booking
-            try {
-              localStorage.removeItem(`jobcard_selected_services_${bookingId}`);
-              localStorage.removeItem('jobcard_selected_services_temp');
-            } catch (e) {}
-            alert(resp.Result || 'Services updated successfully');
-          } else {
-            console.warn('UpdateBookingServices failed', resp);
-            alert(resp?.Message || 'Failed to update booking services');
-          }
+            if (resp?.StatusCode === 200) {
+              // success
+              // remove localStorage entries for this booking
+              try {
+                localStorage.removeItem(`jobcard_selected_services_${bookingId}`);
+                localStorage.removeItem('jobcard_selected_services_temp');
+              } catch (e) {}
+              notifications.push(resp.Result || 'Services updated successfully');
+            } else {
+              console.warn('UpdateBookingServices failed', resp);
+              notifications.push(resp?.Message || 'Failed to update booking services');
+            }
         }
       } catch (err) {
         console.error('Failed to update booking services', err);
@@ -500,7 +491,7 @@ const JobCards = () => {
         if (bookingId && partsList.length > 0) {
           const payload = { J_BookingID: String(bookingId), PartsList: partsList };
           const respParts = await addBookingParts(payload);
-          if (respParts?.StatusCode === 200) {
+            if (respParts?.StatusCode === 200) {
             // refresh booking parts for this booking
             try {
               const partsResp = await getBookingPartsByBookingID(bookingId);
@@ -511,11 +502,11 @@ const JobCards = () => {
               console.warn('Failed to refresh booking parts', err);
             }
 
-            alert(respParts.Result || 'Parts added successfully');
-          } else {
-            console.warn('AddBookingParts failed', respParts);
-            alert(respParts?.Message || 'Failed to add parts to booking');
-          }
+              notifications.push(respParts.Result || 'Parts added successfully');
+            } else {
+              console.warn('AddBookingParts failed', respParts);
+              notifications.push(respParts?.Message || 'Failed to add parts to booking');
+            }
         }
       } catch (err) {
         console.error('Failed to add booking parts', err);
@@ -525,9 +516,35 @@ const JobCards = () => {
       dispatch(GetAllJobCards());
     } catch (err) {
       console.error('Error:', err);
-      alert(err.response?.data?.message || 'Something went wrong');
+      // capture error for consolidated notification
+      try {
+        const msg = err?.response?.data?.message || err?.message || 'Something went wrong';
+        notifications.push(msg);
+      } catch (e) {
+        notifications.push('Something went wrong');
+      }
     } finally {
       setSubmitLoading(false);
+      // show one consolidated alert summarizing results/errors
+      try {
+        if (Array.isArray(notifications) && notifications.length > 0) {
+          // dedupe messages while preserving order
+          const seen = new Set();
+          const out = [];
+          for (const m of notifications) {
+            const str = String(m || '').trim();
+            if (!str) continue;
+            if (!seen.has(str)) {
+              seen.add(str);
+              out.push(str);
+            }
+          }
+          if (out.length > 0) alert(out.join('\n'));
+        }
+      } catch (e) {
+        // fallback to a simple alert
+        alert('Operation completed');
+      }
     }
   };
 
