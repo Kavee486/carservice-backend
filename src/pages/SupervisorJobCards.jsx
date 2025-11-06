@@ -22,6 +22,9 @@ const SupervisorJobCards = () => {
   const [currentBookingId, setCurrentBookingId] = useState(null);
   const [selectedServices, setSelectedServices] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState('In Progress');
+  // parts grouped by service in-modal: { [serviceId|"unassigned"]: [{ partId, qty, unitPrice }] }
+  const [selectedPartsByService, setSelectedPartsByService] = useState({});
+  // flattened version kept for backwards compatibility with submit logic
   const [selectedPartsRows, setSelectedPartsRows] = useState([]);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [serviceFilter, setServiceFilter] = useState('');
@@ -167,11 +170,15 @@ const SupervisorJobCards = () => {
       const resp = await getBookingPartsByBookingID(String(bookingId));
       if (resp?.StatusCode === 200) {
         const rows = (resp.ResultSet || []).map(bp => ({ partId: String(bp.PartID || bp.P_PartID || bp.PartId || ''), qty: parseInt(bp.Quantity || bp.Qty || 1, 10) || 1, unitPrice: parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.J_Charge || 0) || 0 }));
+        // place fetched booking parts into 'unassigned' group by default and sync flattened rows
+        setSelectedPartsByService({ unassigned: rows });
         setSelectedPartsRows(rows);
       } else {
+        setSelectedPartsByService({});
         setSelectedPartsRows([]);
       }
     } catch (e) {
+      setSelectedPartsByService({});
       setSelectedPartsRows([]);
     }
 
@@ -246,6 +253,76 @@ const SupervisorJobCards = () => {
     }
   }, [selectedServices, currentBookingId]);
 
+  // Ensure groups exist for selected services (create empty arrays for each)
+  useEffect(() => {
+    setSelectedPartsByService(prev => {
+      const copy = { ...(prev || {}) };
+      let changed = false;
+      (selectedServices || []).forEach(sid => {
+        const key = String(sid);
+        if (!Array.isArray(copy[key])) {
+          copy[key] = [];
+          changed = true;
+        }
+      });
+      if (changed) {
+        syncFlattenToState(copy);
+        return copy;
+      }
+      return prev;
+    });
+  }, [selectedServices]);
+
+  // Helpers to manage grouped parts by service in the modal
+  const flattenSelectedParts = (byService) => {
+    const groups = byService || selectedPartsByService || {};
+    const flat = [];
+    Object.keys(groups).forEach(key => {
+      const arr = Array.isArray(groups[key]) ? groups[key] : [];
+      arr.forEach(r => flat.push({ ...r }));
+    });
+    return flat;
+  };
+
+  const syncFlattenToState = (byService) => {
+    const flat = flattenSelectedParts(byService);
+    setSelectedPartsRows(flat);
+  };
+
+  const addPartRowToService = (serviceKey = 'unassigned') => {
+    setSelectedPartsByService(prev => {
+      const copy = { ...(prev || {}) };
+      if (!Array.isArray(copy[serviceKey])) copy[serviceKey] = [];
+      copy[serviceKey].push({ partId: '', qty: 1, unitPrice: 0 });
+      // sync flattened
+      syncFlattenToState(copy);
+      return copy;
+    });
+  };
+
+  const updatePartRowInService = (serviceKey, idx, updates) => {
+    setSelectedPartsByService(prev => {
+      const copy = { ...(prev || {}) };
+      if (!Array.isArray(copy[serviceKey])) copy[serviceKey] = [];
+      copy[serviceKey] = copy[serviceKey].map((r, i) => i === idx ? { ...r, ...updates } : r);
+      // sync flattened
+      syncFlattenToState(copy);
+      return copy;
+    });
+  };
+
+  const removePartRowFromService = (serviceKey, idx) => {
+    setSelectedPartsByService(prev => {
+      const copy = { ...(prev || {}) };
+      if (!Array.isArray(copy[serviceKey])) return prev;
+      copy[serviceKey] = copy[serviceKey].filter((_, i) => i !== idx);
+      // cleanup empty groups
+      if (Array.isArray(copy[serviceKey]) && copy[serviceKey].length === 0) delete copy[serviceKey];
+      syncFlattenToState(copy);
+      return copy;
+    });
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!currentBookingId) return;
@@ -275,16 +352,19 @@ const SupervisorJobCards = () => {
         try { localStorage.removeItem(`jobcard_selected_services_${currentBookingId}`); } catch(e){}
       }
 
+      // Ensure flattened parts reflect grouped parts before submitting
+      const flattenedParts = flattenSelectedParts(selectedPartsByService);
+      setSelectedPartsRows(flattenedParts);
       // Update booking parts
-      const partsPayload = (selectedPartsRows || []).map(p => ({ PartID: parseInt(p.partId || 0, 10) || 0, Quantity: parseInt(p.qty || 0, 10) || 0 })).filter(p => p.PartID && p.Quantity);
+      const partsPayload = (flattenedParts || []).map(p => ({ PartID: parseInt(p.partId || 0, 10) || 0, Quantity: parseInt(p.qty || 0, 10) || 0 })).filter(p => p.PartID && p.Quantity);
       if (partsPayload.length > 0) {
         await addBookingParts({ J_BookingID: String(currentBookingId), PartsList: partsPayload });
       }
 
       // store totals via addJobCardService similar to admin flow
       try {
-        const partsQty = (selectedPartsRows || []).reduce((s, r) => s + (parseInt(r.qty || 0, 10) || 0), 0);
-        const partsTotal = (selectedPartsRows || []).reduce((s, r) => s + ((parseFloat(r.unitPrice || 0) || 0) * (parseInt(r.qty || 0, 10) || 0)), 0);
+  const partsQty = (flattenedParts || []).reduce((s, r) => s + (parseInt(r.qty || 0, 10) || 0), 0);
+  const partsTotal = (flattenedParts || []).reduce((s, r) => s + ((parseFloat(r.unitPrice || 0) || 0) * (parseInt(r.qty || 0, 10) || 0)), 0);
         const svcTotal = (selectedServices || []).reduce((s, id) => {
           const svc = servicesList.find(x => String(x.S_ServiceID) === String(id));
           return s + (parseFloat(svc?.S_BaseCharge || 0) || 0);
@@ -357,10 +437,9 @@ const SupervisorJobCards = () => {
       const bookingKey = String(jobCard.J_BookingID || '').toString();
       const status = String(jobCard.J_JobCardStatus || '').toLowerCase();
 
-      // show if In Progress OR if we have local totals/services that indicate supervisor activity
-      const showBecauseTotals = totalsMap && totalsMap[bookingKey];
-      const showBecauseServices = bookingServicesMap && bookingServicesMap[bookingKey] && bookingServicesMap[bookingKey].length > 0;
-      if (status !== 'in progress' && !showBecauseTotals && !showBecauseServices) return false;
+  // show only if In Progress OR if we have local totals that indicate supervisor activity
+  const showBecauseTotals = totalsMap && totalsMap[bookingKey];
+  if (status !== 'in progress' && !showBecauseTotals) return false;
 
       const term = String(searchTerm || '').toLowerCase();
       if (!term) return true;
@@ -721,44 +800,122 @@ const SupervisorJobCards = () => {
                   </div>
 
                   <div className="space-y-3">
-                    {selectedPartsRows.map((row, idx) => (
-                      <div key={idx} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-white">
-                        <Package className="text-green-500 h-5 w-5" />
-                        <div className="flex-1 grid grid-cols-12 gap-2 items-center">
-                          <div className="col-span-6">
-                            <select value={row.partId} onChange={(e)=>{ const partId=e.target.value; const part=partsList.find(p=>String(p.P_PartID)===String(partId)); const unit = part ? (part.P_UnitPrice||part.P_PartPrice||part.P_PartPrice) : 0; setSelectedPartsRows(prev=>prev.map((r,i)=> i===idx?{...r, partId, unitPrice: unit}:r)); }} className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white">
-                              <option value="">Select part</option>
-                              {partsList.map(p=> (
-                                <option key={p.P_PartID} value={p.P_PartID}>{p.P_PartName} — Rs {parseFloat(p.P_UnitPrice||p.P_PartPrice||0).toFixed(2)}</option>
-                              ))}
-                            </select>
+                    {/* Render parts grouped under each selected service */}
+                    {(selectedServices || []).map((svcId) => {
+                      const svc = servicesList.find(s => String(s.S_ServiceID) === String(svcId));
+                      const key = String(svcId);
+                      const rows = selectedPartsByService[key] || [];
+                      return (
+                        <div key={key} className="border border-gray-100 rounded-lg p-3 bg-white">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-medium text-gray-800">{svc?.S_ServiceName || `Service ${key}`}</div>
+                            <div>
+                              <button type="button" onClick={() => addPartRowToService(key)} className="text-sm px-3 py-1 bg-green-50 text-green-700 rounded-md border border-green-100">+ Add Part</button>
+                            </div>
                           </div>
+                          <div className="space-y-2">
+                            {rows.length === 0 && <div className="text-sm text-gray-500">No parts added for this service.</div>}
+                            {rows.map((row, idx) => (
+                              <div key={idx} className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 bg-white">
+                                <Package className="text-green-500 h-5 w-5" />
+                                <div className="flex-1 grid grid-cols-12 gap-2 items-center">
+                                  <div className="col-span-6">
+                                    <select
+                                      value={row.partId}
+                                      onChange={(e) => {
+                                        const partId = e.target.value;
+                                        const part = partsList.find(p => String(p.P_PartID) === String(partId));
+                                        const unit = part ? parseFloat(part.P_UnitPrice || 0) : 0;
+                                        updatePartRowInService(key, idx, { partId, unitPrice: unit });
+                                      }}
+                                      className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                    >
+                                      <option value="">Select part</option>
+                                      {Array.isArray(partsList) && partsList.map(p => (
+                                        <option key={p.P_PartID} value={p.P_PartID}>{p.P_PartName} — Rs {parseFloat(p.P_UnitPrice || 0).toFixed(2)}</option>
+                                      ))}
+                                    </select>
+                                  </div>
 
-                          <div className="col-span-2">
-                            <input type="number" min="1" value={row.qty} onChange={(e)=>{ const q=parseInt(e.target.value||0,10)||0; setSelectedPartsRows(prev=>prev.map((r,i)=> i===idx?{...r, qty:q}:r)); }} className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm" />
-                          </div>
+                                  <div className="col-span-2">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={row.qty}
+                                      onChange={(e) => { const q = parseInt(e.target.value || 0, 10) || 0; updatePartRowInService(key, idx, { qty: q }); }}
+                                      className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                    />
+                                  </div>
 
-                          <div className="col-span-3 text-sm">
-                            <div className="text-xs text-gray-500">Unit</div>
-                            <div className="font-medium">{row.unitPrice?`Rs ${parseFloat(row.unitPrice).toFixed(2)}`:'-'}</div>
-                          </div>
+                                  <div className="col-span-3 text-sm">
+                                    <div className="text-xs text-gray-500">Unit</div>
+                                    <div className="font-medium">{row.unitPrice ? `Rs ${parseFloat(row.unitPrice).toFixed(2)}` : '-'}</div>
+                                  </div>
 
-                          <div className="col-span-1 text-right">
-                            <div className="text-xs text-gray-500">Line</div>
-                            <div className="font-medium">{row.unitPrice?`Rs ${(parseFloat(row.unitPrice||0)*(parseInt(row.qty||0,10)||0)).toFixed(2)}`:'Rs 0.00'}</div>
+                                  <div className="col-span-1 text-right">
+                                    <div className="text-xs text-gray-500">Line</div>
+                                    <div className="font-medium">{row.unitPrice ? `Rs ${(parseFloat(row.unitPrice || 0) * (parseInt(row.qty || 0) || 0)).toFixed(2)}` : 'Rs 0.00'}</div>
+                                  </div>
+                                </div>
+
+                                <div className="w-12 text-right">
+                                  <button type="button" onClick={() => removePartRowFromService(key, idx)} className="text-red-500 px-2 py-1 rounded-md hover:bg-red-50">Remove</button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
+                      );
+                    })}
 
-                        <div className="w-12 text-right">
-                          <button type="button" onClick={()=> setSelectedPartsRows(prev=>prev.filter((_,i)=>i!==idx))} className="text-red-500 px-2 py-1 rounded-md hover:bg-red-50">Remove</button>
+                    {/* Unassigned parts (not linked to any service) */}
+                    {Array.isArray(selectedPartsByService.unassigned) && (
+                      <div className="border border-gray-100 rounded-lg p-3 bg-white">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="font-medium text-gray-800">Unassigned Parts</div>
+                          <div>
+                            <button type="button" onClick={() => addPartRowToService('unassigned')} className="text-sm px-3 py-1 bg-green-50 text-green-700 rounded-md border border-green-100">+ Add Part</button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {selectedPartsByService.unassigned.map((row, idx) => (
+                            <div key={idx} className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 bg-white">
+                              <Package className="text-green-500 h-5 w-5" />
+                              <div className="flex-1 grid grid-cols-12 gap-2 items-center">
+                                <div className="col-span-6">
+                                  <select value={row.partId} onChange={(e) => {
+                                    const partId = e.target.value;
+                                    const part = partsList.find(p => String(p.P_PartID) === String(partId));
+                                    const unit = part ? parseFloat(part.P_UnitPrice || 0) : 0;
+                                    updatePartRowInService('unassigned', idx, { partId, unitPrice: unit });
+                                  }} className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white">
+                                    <option value="">Select part</option>
+                                    {Array.isArray(partsList) && partsList.map(p => (
+                                      <option key={p.P_PartID} value={p.P_PartID}>{p.P_PartName} — Rs {parseFloat(p.P_UnitPrice || 0).toFixed(2)}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="col-span-2">
+                                  <input type="number" min="1" value={row.qty} onChange={(e) => { const q = parseInt(e.target.value || 0, 10) || 0; updatePartRowInService('unassigned', idx, { qty: q }); }} className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm" />
+                                </div>
+                                <div className="col-span-3 text-sm">
+                                  <div className="text-xs text-gray-500">Unit</div>
+                                  <div className="font-medium">{row.unitPrice ? `Rs ${parseFloat(row.unitPrice).toFixed(2)}` : '-'}</div>
+                                </div>
+                                <div className="col-span-1 text-right">
+                                  <div className="text-xs text-gray-500">Line</div>
+                                  <div className="font-medium">{row.unitPrice ? `Rs ${(parseFloat(row.unitPrice || 0) * (parseInt(row.qty || 0) || 0)).toFixed(2)}` : 'Rs 0.00'}</div>
+                                </div>
+                              </div>
+                              <div className="w-12 text-right"><button type="button" onClick={() => removePartRowFromService('unassigned', idx)} className="text-red-500 px-2 py-1 rounded-md hover:bg-red-50">Remove</button></div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    )}
 
-                    <div>
-                      <button type="button" onClick={()=> setSelectedPartsRows(prev=>[...prev,{partId:'',qty:1,unitPrice:0}])} className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-md border border-green-200 text-sm">
-                        <Plus className="h-4 w-4" /> Add Part
-                      </button>
+                    <div className="pt-2">
+                      <button type="button" onClick={() => addPartRowToService('unassigned')} className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-50 to-green-100 text-green-700 rounded-md border border-green-200 text-sm hover:shadow-sm transition"><Plus className="h-4 w-4" /> Add Part (Unassigned)</button>
                     </div>
                   </div>
 

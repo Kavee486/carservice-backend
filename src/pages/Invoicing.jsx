@@ -2,11 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { FileText, Plus, Search, Filter, Edit3, RefreshCw, Calendar, CreditCard, CheckCircle, XCircle, Clock, Printer, Download } from 'lucide-react';
 import { GetAllInvoices, UpdateInvoice } from '../actions/invoiceActions';
+import { GetAllJobCards } from '../actions/jobCardActions';
 
 const Invoices = () => {
   const dispatch = useDispatch();
   const invoiceList = useSelector(state => state.invoiceList);
   const { loading, invoices, error } = invoiceList;
+  const jobCardList = useSelector(state => state.jobCardList || {});
+  const { jobCards = [] } = jobCardList || {};
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [currentInvoice, setCurrentInvoice] = useState(null);
@@ -19,7 +22,24 @@ const Invoices = () => {
 
   useEffect(() => {
     dispatch(GetAllInvoices());
+    // also load job cards so we can display the related price per booking in the invoices table
+    try { dispatch(GetAllJobCards()); } catch (e) {}
   }, [dispatch]);
+
+  // build a bookingId -> price map from jobCards
+  const bookingPriceMap = React.useMemo(() => {
+    const map = {};
+    if (Array.isArray(jobCards)) {
+      for (const jc of jobCards) {
+        try {
+          const bookingId = String(jc.J_BookingID || jc.J_BookingId || jc.BookingID || '');
+          const priceVal = jc.Price !== undefined && jc.Price !== null && String(jc.Price).trim() !== '' ? parseFloat(jc.Price || 0) : (jc.PriceAmount || jc.J_Price || jc.J_Total || 0);
+          if (bookingId) map[bookingId] = priceVal;
+        } catch (e) {}
+      }
+    }
+    return map;
+  }, [jobCards]);
 
   const handleEditInvoice = (invoice) => {
     setCurrentInvoice(invoice);
@@ -110,12 +130,19 @@ const Invoices = () => {
     let itemsHtml = '';
     if (inv._localInvoiceDetails) {
       const d = inv._localInvoiceDetails;
+      // Services with per-service parts (if any)
       if (Array.isArray(d.Services) && d.Services.length > 0) {
         itemsHtml += `<tr><td style="font-weight:600;text-align:center">Services</td><td style="text-align:center"><strong>${fmt(d.Totals?.servicesTotal || 0)}</strong></td></tr>`;
         d.Services.forEach(s => {
           itemsHtml += `<tr><td style="text-align:center">${s.name}</td><td style="text-align:center"><strong>${fmt(s.price || 0)}</strong></td></tr>`;
+          if (Array.isArray(s.parts) && s.parts.length > 0) {
+            s.parts.forEach(p => {
+              itemsHtml += `<tr><td style="padding-left:20px;text-align:center">${p.name} x ${p.qty}</td><td style="text-align:center"><strong>${fmt(p.lineTotal || 0)}</strong></td></tr>`;
+            });
+          }
         });
       }
+      // Unassigned parts
       if (Array.isArray(d.Parts) && d.Parts.length > 0) {
         itemsHtml += `<tr><td style="font-weight:600;text-align:center">Parts</td><td style="text-align:center"><strong>${fmt(d.Totals?.partsTotal || 0)}</strong></td></tr>`;
         d.Parts.forEach(p => {
@@ -421,6 +448,7 @@ const Invoices = () => {
                     <tr className="border-b border-gray-300">
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Invoice ID</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Booking ID</th>
+                      <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Price</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Job Card Status</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Invoice Date</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Payment Status</th>
@@ -432,6 +460,17 @@ const Invoices = () => {
                       <tr key={invoice.I_InvoiceID} className="border-b border-gray-200 hover:bg-gray-50">
                         <td className="py-4 px-4 text-base font-medium text-gray-900">{invoice.I_InvoiceID}</td>
                         <td className="py-4 px-4 text-base text-gray-700">{invoice.J_BookingID}</td>
+                        <td className="py-4 px-4 text-base text-gray-700">
+                          {/* Prefer job card reported Price for this booking, fall back to invoice total */}
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-50 text-green-800">
+                            {(() => {
+                              const bid = String(invoice.J_BookingID || '');
+                              const p = bookingPriceMap[bid];
+                              const val = (p !== undefined && p !== null && String(p).trim() !== '') ? p : invoice.I_TotalAmount;
+                              return formatCurrency(val || 0);
+                            })()}
+                          </span>
+                        </td>
                         <td className="py-4 px-4">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getJobCardStatusBadge(invoice.J_JobCardStatus)}`}>
                             {invoice.J_JobCardStatus || '—'}
@@ -577,15 +616,10 @@ const Invoices = () => {
         {isPreviewVisible && previewInvoice && (
           <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-6 z-50 overflow-auto">
             <div ref={previewRef} className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl p-6">
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center justify-between mb-4">
                 <div>
                   <div className="text-2xl font-bold text-blue-600">Premium Auto Care</div>
                   <div className="text-sm text-gray-600">Quality servicing & repairs</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-500">Invoice</div>
-                  <div className="text-lg font-semibold">": " {previewInvoice.I_InvoiceID}</div>
-                  <div className="text-xs text-gray-500">Booking: {previewInvoice.J_BookingID}</div>
                 </div>
               </div>
 
@@ -599,7 +633,9 @@ const Invoices = () => {
                     </div>
                   </div>
                   <div className="text-right text-sm">
-                    <div className="font-medium">Payment Receipt</div>
+                    <div className="text-sm text-white/90">Invoice</div>
+                    <div className="text-lg font-semibold">{previewInvoice.I_InvoiceID}</div>
+                    <div className="text-xs">Booking: {previewInvoice.J_BookingID}</div>
                     <div className="text-xs">{formatDate(previewInvoice.I_InvoiceDate)}</div>
                   </div>
                 </div>
@@ -615,13 +651,13 @@ const Invoices = () => {
                       <thead>
                         <tr className="text-center text-xs text-gray-500 border-b">
                           <th className="py-2">Description</th>
-                          <th className="py-2">Amount</th>
+                          <th className="py-2">Amount (RS)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {previewInvoice._localInvoiceDetails ? (
                           <>
-                            {/* Services section */}
+                            {/* Services section with per-service parts */}
                             {previewInvoice._localInvoiceDetails.Services && previewInvoice._localInvoiceDetails.Services.length > 0 && (
                               <>
                                 <tr>
@@ -629,15 +665,23 @@ const Invoices = () => {
                                   <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.servicesTotal || 0)}</strong></td>
                                 </tr>
                                 {previewInvoice._localInvoiceDetails.Services.map((s, idx) => (
-                                  <tr key={`svc-${idx}`}>
-                                    <td className="py-1 text-center text-sm">{s.name}</td>
-                                    <td className="py-1 text-center"><strong>{formatCurrencyTrailing(s.price)}</strong></td>
-                                  </tr>
+                                  <React.Fragment key={`svc-${idx}`}>
+                                    <tr>
+                                      <td className="py-1 text-center text-sm">{s.name}</td>
+                                      <td className="py-1 text-center"><strong>{formatCurrencyTrailing(s.price)}</strong></td>
+                                    </tr>
+                                    {s.parts && s.parts.length > 0 && s.parts.map((p, pi) => (
+                                      <tr key={`svc-${idx}-part-${pi}`}>
+                                        <td className="py-1 text-center text-sm">{p.name} <span className="text-xs text-gray-500">x {p.qty}</span></td>
+                                        <td className="py-1 text-center"><strong>{formatCurrencyTrailing(p.lineTotal)}</strong></td>
+                                      </tr>
+                                    ))}
+                                  </React.Fragment>
                                 ))}
                               </>
                             )}
 
-                            {/* Parts section */}
+                            {/* Unassigned Parts section */}
                             {previewInvoice._localInvoiceDetails.Parts && previewInvoice._localInvoiceDetails.Parts.length > 0 && (
                               <>
                                 <tr>
