@@ -660,7 +660,20 @@ const JobCards = () => {
                 parts: partsByServiceDetails[String(id)] || []
               };
             });
-            const minimal = { J_BookingID: bookingIdFinal, Totals: { grandTotal: finalGrand }, Services: servicesDetailed, Parts: minimalParts };
+            // Include detailed totals and labour so invoice preview displays labour/ subtotals correctly
+            const minimal = {
+              J_BookingID: bookingIdFinal,
+              J_CreatedDate: new Date().toISOString(),
+              LabourCost: parseFloat(finalLabor.toFixed(2)),
+              Services: servicesDetailed,
+              Parts: minimalParts,
+              Totals: {
+                servicesTotal: parseFloat(finalSvcTotal.toFixed(2)),
+                partsTotal: parseFloat(finalPartsTotal.toFixed(2)),
+                labour: parseFloat(finalLabor.toFixed(2)),
+                grandTotal: finalGrand
+              }
+            };
             try { localStorage.setItem(`invoice_for_booking_${bookingIdFinal}`, JSON.stringify(minimal)); } catch (e) {}
             try { localStorage.setItem('latest_invoice', JSON.stringify(minimal)); } catch (e) {}
           } catch (e) {
