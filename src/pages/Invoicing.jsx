@@ -78,22 +78,40 @@ const Invoices = () => {
   const handlePreviewInvoice = (invoice) => {
     // Try to enrich invoice preview with locally stored itemized invoice (set when job card completed)
     try {
-      const key = `invoice_for_booking_${invoice?.J_BookingID}`;
+      const bookingIdKey = String(invoice?.J_BookingID || '');
+      const key = `invoice_for_booking_${bookingIdKey}`;
       const stored = localStorage.getItem(key) || localStorage.getItem('latest_invoice');
+      let parsed = null;
       if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && String(parsed.J_BookingID) === String(invoice?.J_BookingID)) {
-          setPreviewInvoice({ ...invoice, _localInvoiceDetails: parsed });
-          setIsPreviewVisible(true);
-          return;
-        }
+        try { parsed = JSON.parse(stored); } catch (e) { parsed = null; }
+      }
+      // prefer an explicit grand total key if present
+      const grandKey = `invoice_grand_total_${bookingIdKey}`;
+      const storedGrand = localStorage.getItem(grandKey) || localStorage.getItem('latest_invoice_grand_total');
+      const bookingPrice = bookingPriceMap[bookingIdKey];
+      if (parsed && String(parsed.J_BookingID) === String(invoice?.J_BookingID)) {
+        const grandFromParsed = parseFloat(parsed?.Totals?.grandTotal || 0) || 0;
+        const grandFromStored = storedGrand ? parseFloat(storedGrand) || 0 : 0;
+        const computedTotal = parseFloat(grandFromStored || grandFromParsed || bookingPrice || invoice?.I_TotalAmount || 0);
+        setPreviewInvoice({ ...invoice, _localInvoiceDetails: parsed, _computedTotal: computedTotal });
+        setIsPreviewVisible(true);
+        return;
       }
     } catch (e) {
       // ignore parse/storage errors
       console.warn('Failed reading local invoice for preview', e);
     }
-    // fallback to plain invoice object
-    setPreviewInvoice(invoice);
+    // fallback to plain invoice object - attach computed total from bookingPriceMap or invoice
+    try {
+      const bookingIdKey = String(invoice?.J_BookingID || '');
+      const bookingPrice = bookingPriceMap[bookingIdKey];
+      // also honor explicit grand total key in storage if present
+      const storedGrand = localStorage.getItem(`invoice_grand_total_${bookingIdKey}`) || localStorage.getItem('latest_invoice_grand_total');
+      const computedTotal = parseFloat(storedGrand || bookingPrice || invoice?.I_TotalAmount || 0);
+      setPreviewInvoice({ ...invoice, _computedTotal: computedTotal });
+    } catch (e) {
+      setPreviewInvoice(invoice);
+    }
     setIsPreviewVisible(true);
     // small delay to let modal render if needed
     setTimeout(() => {}, 50);
@@ -116,7 +134,8 @@ const Invoices = () => {
     const companyName = 'Premium Auto Care';
     const logoPath = (typeof window !== 'undefined' && document.querySelector('link[rel="shortcut icon"]')) ? '/AutoDeck Logo Design.png' : '/AutoDeck Logo Design.png';
     const carImg = '/AutoDeck Logo Design.png';
-    const total = parseFloat(inv.I_TotalAmount || 0).toFixed(2);
+  // prefer computed total (attached during preview) or invoice total
+  const total = parseFloat(inv._computedTotal || inv.I_TotalAmount || 0).toFixed(2);
     const date = inv.I_InvoiceDate ? new Date(inv.I_InvoiceDate).toLocaleDateString() : '';
     // local helper to format numbers as 'amount Rs' with commas
     const fmt = (num) => {
@@ -126,33 +145,35 @@ const Invoices = () => {
       return `${parts.join('.')} `;
     };
 
-    // If preview has local itemized details, render them
+    // If preview has local itemized details, render them with category headings bold
     let itemsHtml = '';
     if (inv._localInvoiceDetails) {
       const d = inv._localInvoiceDetails;
-      // Services with per-service parts (if any)
+      // Services category
       if (Array.isArray(d.Services) && d.Services.length > 0) {
-        itemsHtml += `<tr><td style="font-weight:600;text-align:center">Services</td><td style="text-align:center"><strong>${fmt(d.Totals?.servicesTotal || 0)}</strong></td></tr>`;
+        itemsHtml += `<tr><td style="font-weight:700;text-align:left">Services</td><td style="text-align:right;font-weight:700">${fmt(d.Totals?.servicesTotal || 0)}</td></tr>`;
         d.Services.forEach(s => {
-          itemsHtml += `<tr><td style="text-align:center">${s.name}</td><td style="text-align:center"><strong>${fmt(s.price || 0)}</strong></td></tr>`;
+          // service name (normal weight) and price
+          itemsHtml += `<tr><td style="padding-left:16px;text-align:left">${s.name}</td><td style="text-align:right">${fmt(s.price || 0)}</td></tr>`;
           if (Array.isArray(s.parts) && s.parts.length > 0) {
             s.parts.forEach(p => {
-              itemsHtml += `<tr><td style="padding-left:20px;text-align:center">${p.name} x ${p.qty}</td><td style="text-align:center"><strong>${fmt(p.lineTotal || 0)}</strong></td></tr>`;
+              itemsHtml += `<tr><td style="padding-left:28px;text-align:left">${p.name} x ${p.qty}</td><td style="text-align:right">${fmt(p.lineTotal || 0)}</td></tr>`;
             });
           }
         });
       }
-      // Unassigned parts
+      // Unassigned parts category
       if (Array.isArray(d.Parts) && d.Parts.length > 0) {
-        itemsHtml += `<tr><td style="font-weight:600;text-align:center">Parts</td><td style="text-align:center"><strong>${fmt(d.Totals?.partsTotal || 0)}</strong></td></tr>`;
+        itemsHtml += `<tr><td style="font-weight:700;text-align:left">Parts</td><td style="text-align:right;font-weight:700">${fmt(d.Totals?.partsTotal || 0)}</td></tr>`;
         d.Parts.forEach(p => {
-          itemsHtml += `<tr><td style="text-align:center">${p.name} x ${p.qty}</td><td style="text-align:center"><strong>${fmt(p.lineTotal || 0)}</strong></td></tr>`;
+          itemsHtml += `<tr><td style="padding-left:16px;text-align:left">${p.name} x ${p.qty}</td><td style="text-align:right">${fmt(p.lineTotal || 0)}</td></tr>`;
         });
       }
+      // Labour
       if (typeof d.LabourCost !== 'undefined') {
-        itemsHtml += `<tr><td style="font-weight:600;text-align:center">Labour</td><td style="text-align:center"><strong>${fmt(d.LabourCost || 0)}</strong></td></tr>`;
+        itemsHtml += `<tr><td style="font-weight:700;text-align:left">Labour</td><td style="text-align:right;font-weight:700">${fmt(d.LabourCost || 0)}</td></tr>`;
       }
-      itemsHtml += `<tr><td style="font-weight:700;text-align:center">Grand Total</td><td style="text-align:center;font-weight:700"><strong>${fmt(d.Totals?.grandTotal || 0)}</strong></td></tr>`;
+      // Subtotal / Grand total displayed below as Final Amount
     }
 
     return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${inv.I_InvoiceID}</title>
@@ -162,7 +183,7 @@ const Invoices = () => {
         .company{font-size:24px;font-weight:700;color:#0b63d0}
         .meta{text-align:right}
         .line{margin-top:20px;border-top:2px solid #0b63d0}
-        .total{background:#0b63d0;color:#fff;padding:12px;border-radius:6px;margin-top:16px;text-align:right}
+        .total{background:transparent;color:#111;padding:12px;border-radius:6px;margin-top:16px;text-align:center}
   .logo{max-width:80px}
         .car-img{max-width:120px;border-radius:8px}
       </style></head><body>
@@ -191,8 +212,8 @@ const Invoices = () => {
         </div>
         
       </div>
-      <div class="total" style="text-align:center"><strong>Final Amount: ${inv._localInvoiceDetails ? fmt(inv._localInvoiceDetails.Totals?.grandTotal || total) : fmt(total)}</strong></div>
-      <div style="margin-top:14px;text-align:center;font-style:italic;opacity:0.6;color:#333">Thanks for choosing us!</div>
+      <div class="total"><strong style="font-size:18px">Grand Total</strong><div style="font-size:20px;margin-top:6px;font-weight:700">${fmt(inv._computedTotal || (inv._localInvoiceDetails ? inv._localInvoiceDetails.Totals?.grandTotal : total) || total)}</div></div>
+      <div style="margin-top:14px;text-align:center;font-style:italic;opacity:0.85;color:#333;font-weight:700">Thanks for choosing us!</div>
     </body></html>`;
   };
 
@@ -661,19 +682,19 @@ const Invoices = () => {
                             {previewInvoice._localInvoiceDetails.Services && previewInvoice._localInvoiceDetails.Services.length > 0 && (
                               <>
                                 <tr>
-                                  <td className="py-2 font-semibold">Services</td>
-                                  <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.servicesTotal || 0)}</strong></td>
+                                  <td className="py-2 font-semibold text-left">Services</td>
+                                  <td className="py-2 font-semibold text-right">{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.servicesTotal || 0)}</td>
                                 </tr>
                                 {previewInvoice._localInvoiceDetails.Services.map((s, idx) => (
                                   <React.Fragment key={`svc-${idx}`}>
                                     <tr>
-                                      <td className="py-1 text-center text-sm">{s.name}</td>
-                                      <td className="py-1 text-center"><strong>{formatCurrencyTrailing(s.price)}</strong></td>
+                                      <td className="py-1 text-left text-sm pl-4">{s.name}</td>
+                                      <td className="py-1 text-right">{formatCurrencyTrailing(s.price)}</td>
                                     </tr>
                                     {s.parts && s.parts.length > 0 && s.parts.map((p, pi) => (
                                       <tr key={`svc-${idx}-part-${pi}`}>
-                                        <td className="py-1 text-center text-sm">{p.name} <span className="text-xs text-gray-500">x {p.qty}</span></td>
-                                        <td className="py-1 text-center"><strong>{formatCurrencyTrailing(p.lineTotal)}</strong></td>
+                                        <td className="py-1 text-left text-sm pl-8">{p.name} <span className="text-xs text-gray-500">x {p.qty}</span></td>
+                                        <td className="py-1 text-right">{formatCurrencyTrailing(p.lineTotal)}</td>
                                       </tr>
                                     ))}
                                   </React.Fragment>
@@ -685,13 +706,13 @@ const Invoices = () => {
                             {previewInvoice._localInvoiceDetails.Parts && previewInvoice._localInvoiceDetails.Parts.length > 0 && (
                               <>
                                 <tr>
-                                  <td className="py-2 font-semibold">Parts</td>
-                                  <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.partsTotal || 0)}</strong></td>
+                                  <td className="py-2 font-semibold text-left">Parts</td>
+                                  <td className="py-2 font-semibold text-right">{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.partsTotal || 0)}</td>
                                 </tr>
                                 {previewInvoice._localInvoiceDetails.Parts.map((p, idx) => (
                                   <tr key={`part-${idx}`}>
-                                    <td className="py-1 text-center text-sm">{p.name} <span className="text-xs text-gray-500">x {p.qty}</span></td>
-                                    <td className="py-1 text-center"><strong>{formatCurrencyTrailing(p.lineTotal)}</strong></td>
+                                    <td className="py-1 text-left text-sm pl-4">{p.name} <span className="text-xs text-gray-500">x {p.qty}</span></td>
+                                    <td className="py-1 text-right">{formatCurrencyTrailing(p.lineTotal)}</td>
                                   </tr>
                                 ))}
                               </>
@@ -700,15 +721,15 @@ const Invoices = () => {
                             {/* Labour section */}
                             {typeof previewInvoice._localInvoiceDetails.LabourCost !== 'undefined' && (
                               <tr>
-                                <td className="py-2 font-semibold">Labour</td>
-                                <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.LabourCost)}</strong></td>
+                                <td className="py-2 font-semibold text-left">Labour</td>
+                                <td className="py-2 font-semibold text-right">{formatCurrencyTrailing(previewInvoice._localInvoiceDetails.LabourCost)}</td>
                               </tr>
                             )}
                           </>
                         ) : (
                           <tr>
                             <td className="py-2">Services & Parts</td>
-                            <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice.I_TotalAmount)}</strong></td>
+                            <td className="py-2"><strong>{formatCurrencyTrailing(previewInvoice._computedTotal || previewInvoice.I_TotalAmount)}</strong></td>
                           </tr>
                         )}
                       </tbody>
@@ -717,14 +738,14 @@ const Invoices = () => {
 
                   <div className="mt-6 flex justify-center">
                     <div className="w-full text-center">
-                      <div className="text-sm text-gray-500">Subtotal</div>
-                      <div className="text-lg font-semibold">
-                        {previewInvoice._localInvoiceDetails ? formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.grandTotal || 0) : formatCurrencyTrailing(previewInvoice.I_TotalAmount)}
+                      <div className="text-sm text-gray-500">Grand Total</div>
+                      <div className="text-lg font-extrabold">
+                        {previewInvoice._localInvoiceDetails ? formatCurrencyTrailing(previewInvoice._localInvoiceDetails.Totals?.grandTotal || previewInvoice._computedTotal || 0) : formatCurrencyTrailing(previewInvoice._computedTotal || previewInvoice.I_TotalAmount)}
                       </div>
                     </div>
                   </div>
                   <div style={{marginTop:12}} className="text-center">
-                    <div style={{fontStyle:'italic', opacity:0.6}} className="text-gray-600">Thanks for choosing us!</div>
+                    <div style={{fontStyle:'italic', opacity:0.85, fontWeight:600}} className="text-gray-600">Thanks for choosing us!</div>
                   </div>
                 </div>
               </div>

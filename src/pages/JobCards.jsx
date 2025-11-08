@@ -19,6 +19,8 @@ const JobCards = () => {
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [currentJobCard, setCurrentJobCard] = useState(null);
+    // prepare a place to store invoice object built from modal selections
+    let invoiceObjBuilt = null;
   const [deleteLoading, setDeleteLoading] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -439,6 +441,7 @@ const JobCards = () => {
             };
 
             try {
+              // persist full invoice details (do NOT persist grand total here; final write will be authoritative)
               localStorage.setItem(`invoice_for_booking_${bookingId}`, JSON.stringify(invoiceObj));
               localStorage.setItem('latest_invoice', JSON.stringify(invoiceObj));
             } catch (e) {
@@ -484,13 +487,26 @@ const JobCards = () => {
             const respAdd = await addJobCardService(payload);
             // respAdd may return status; we don't want to block UI but log
             if (respAdd?.StatusCode === 200) {
-              console.log('AddJobCardsDetails stored totals:', respAdd);
-              // reflect these totals immediately in the UI while the backend updates
-              try {
+                console.log('AddJobCardsDetails stored totals:', respAdd);
+                // reflect these totals immediately in the UI while the backend updates
+                try {
                   setTotalsMap(prev => ({ ...prev, [String(bookingId)]: { Quantity: payload.Quantity, Price: payload.Price, J_JobCardStatus: payload.J_JobCardStatus, LaborCost: payload.J_LaborCost } }));
-              } catch (e) {}
+                } catch (e) {}
+
+                // If we previously built an invoice object from the modal, persist it now (do not write grand total here)
+                try {
+                  if (invoiceObjBuilt) {
+                    const grandVal = parseFloat(payload.Price || respAdd?.Price || invoiceObjBuilt?.Totals?.grandTotal || 0) || 0;
+                    invoiceObjBuilt.Totals = invoiceObjBuilt.Totals || {};
+                    invoiceObjBuilt.Totals.grandTotal = grandVal;
+                    try { localStorage.setItem(`invoice_for_booking_${bookingId}`, JSON.stringify(invoiceObjBuilt)); } catch (e) {}
+                    try { localStorage.setItem('latest_invoice', JSON.stringify(invoiceObjBuilt)); } catch (e) {}
+                  }
+                } catch (e) {
+                  console.warn('Failed persisting invoice after AddJobCardsDetails', e);
+                }
             } else {
-              console.warn('AddJobCardsDetails returned non-200', respAdd);
+                console.warn('AddJobCardsDetails returned non-200', respAdd);
             }
           } catch (err) {
             console.warn('Failed calling AddJobCardsDetails to store totals', err);
@@ -593,6 +609,66 @@ const JobCards = () => {
         }
       } catch (err) {
         console.error('Failed to add booking parts', err);
+      }
+
+      // FINAL authoritative localStorage write: compute totals from current modal UI and persist
+      try {
+        const bookingIdFinal = String(jobCardData.J_BookingID || currentJobCard?.J_BookingID || '');
+        const finalFlattened = flattenSelectedParts(selectedPartsByService || {});
+        const finalPartsTotal = (finalFlattened || []).reduce((s, r) => s + ((parseFloat(r.unitPrice || 0) || 0) * (parseInt(r.qty || 0, 10) || 0)), 0);
+        const finalSvcTotal = (selectedServices || []).reduce((s, id) => {
+          const svc = servicesList.find(x => String(x.S_ServiceID) === String(id));
+          return s + (parseFloat(svc?.S_BaseCharge || 0) || 0);
+        }, 0);
+        const finalLabor = parseFloat(values?.laborCost || laborCost || 0) || 0;
+        const finalGrand = parseFloat((finalSvcTotal + finalPartsTotal + finalLabor).toFixed(2));
+        if (bookingIdFinal) {
+          console.log('FINAL WRITE: persisting grand total', bookingIdFinal, finalGrand);
+          try {
+            localStorage.setItem(`invoice_grand_total_${bookingIdFinal}`, String(finalGrand));
+            localStorage.setItem('latest_invoice_grand_total', String(finalGrand));
+            // Save invoice details for preview
+            const groups = selectedPartsByService || {};
+            const minimalParts = [];
+            const partsByServiceDetails = {};
+            try {
+              Object.keys(groups).forEach(key => {
+                const rows = Array.isArray(groups[key]) ? groups[key] : [];
+                if (key === 'unassigned') {
+                  rows.forEach(p => {
+                    const found = parts.find(x => String(x?.P_PartID) === String(p.partId));
+                    const unitPrice = parseFloat(p.unitPrice || 0) || 0;
+                    const qty = parseInt(p.qty || 0, 10) || 0;
+                    minimalParts.push({ id: p.partId, name: found?.P_PartName || `Part ${p.partId}`, unitPrice, qty, lineTotal: parseFloat((unitPrice * qty).toFixed(2)) });
+                  });
+                } else {
+                  partsByServiceDetails[String(key)] = rows.map(p => {
+                    const found = parts.find(x => String(x?.P_PartID) === String(p.partId));
+                    const unitPrice = parseFloat(p.unitPrice || 0) || 0;
+                    const qty = parseInt(p.qty || 0, 10) || 0;
+                    return { id: p.partId, name: found?.P_PartName || `Part ${p.partId}`, unitPrice, qty, lineTotal: parseFloat((unitPrice * qty).toFixed(2)) };
+                  });
+                }
+              });
+            } catch (e) {}
+            const servicesDetailed = (selectedServices || []).map(id => {
+              const svc = servicesList.find(x => String(x.S_ServiceID) === String(id));
+              return {
+                id: id,
+                name: svc?.S_ServiceName || `Service ${id}`,
+                price: parseFloat(svc?.S_BaseCharge || 0) || 0,
+                parts: partsByServiceDetails[String(id)] || []
+              };
+            });
+            const minimal = { J_BookingID: bookingIdFinal, Totals: { grandTotal: finalGrand }, Services: servicesDetailed, Parts: minimalParts };
+            try { localStorage.setItem(`invoice_for_booking_${bookingIdFinal}`, JSON.stringify(minimal)); } catch (e) {}
+            try { localStorage.setItem('latest_invoice', JSON.stringify(minimal)); } catch (e) {}
+          } catch (e) {
+            console.warn('Failed storing final grand total to localStorage', e);
+          }
+        }
+      } catch (e) {
+        console.warn('Error computing final grand total for storage', e);
       }
 
       setIsModalVisible(false);
