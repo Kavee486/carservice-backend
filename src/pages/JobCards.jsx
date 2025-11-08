@@ -7,7 +7,7 @@ import { ClipboardList, Plus, Search, Filter, Edit3, Trash2, RefreshCw, Calendar
 import { GetAllJobCards, AddJobCard, UpdateJobCard, DeleteJobCard } from '../actions/jobCardActions';
 import { GetAllJobCardItems } from '../actions/jobCardItemActions';
 import { fetchAllParts, fetchAllServices } from '../services/jobCardItemServices';
-import { updateBookingServices, addBookingParts, getBookingPartsByBookingID, addJobCard as addJobCardService } from '../services/jobCardServices';
+import { updateBookingServices, updateBookingService, addBookingParts, getBookingPartsByBookingID, getBookingServicesWithParts, addJobCard as addJobCardService } from '../services/jobCardServices';
 import dayjs from 'dayjs';
 
 const JobCards = () => {
@@ -167,6 +167,46 @@ const JobCards = () => {
     setCurrentJobCard(jobCard);
     // initialize modal selections from existing booking-specific parts if available
     const bookingIdKey = String(jobCard.J_BookingID || '');
+    // Try to fetch structured services-with-parts first so we can populate groups by service
+    (async () => {
+      try {
+        const svcResp = await getBookingServicesWithParts(bookingIdKey);
+        if (svcResp?.StatusCode === 200 && Array.isArray(svcResp.ResultSet) && svcResp.ResultSet.length > 0) {
+          const groups = {};
+          const svcSet = new Set();
+          svcResp.ResultSet.forEach(row => {
+            // Backend returns rows containing ServiceID and PartID (if part attached)
+            const sid = row.ServiceID || row.S_ServiceID || row.ServiceId || row.ServiceID;
+            const pid = row.PartID || row.P_PartID || row.PartId || row.PARTID || row.PartID;
+            const qty = parseInt(row.Quantity || row.Qty || row.TotalQuantity || 0, 10) || 0;
+            const unit = parseFloat(row.UnitPrice || row.P_UnitPrice || row.UnitPrice || 0) || 0;
+            // if service id present, ensure group exists
+            if (sid != null && String(sid).trim() !== '') {
+              const key = String(sid);
+              svcSet.add(String(sid));
+              if (!Array.isArray(groups[key])) groups[key] = [];
+              if (pid) groups[key].push({ partId: String(pid), qty: qty || 1, unitPrice: unit });
+            } else {
+              // unassigned parts
+              if (!Array.isArray(groups['unassigned'])) groups['unassigned'] = [];
+              if (pid) groups['unassigned'].push({ partId: String(pid), qty: qty || 1, unitPrice: unit });
+            }
+          });
+          // ensure selected services array contains these service ids
+          const svcArray = Array.from(svcSet);
+          if (svcArray.length > 0) setSelectedServices(svcArray.map(id => String(id)));
+          setSelectedPartsByService(groups);
+          // sync flattened rows
+          syncFlattenToState(groups);
+          // also store raw booking parts map for consistency
+          setBookingPartsMap(prev => ({ ...prev, [bookingIdKey]: svcResp.ResultSet || [] }));
+          return; // we've initialized from structured endpoint, skip older flows
+        }
+      } catch (e) {
+        // ignore and fall back to older fetch
+        console.warn('getBookingServicesWithParts fetch failed', e);
+      }
+    })();
     const bookingParts = bookingPartsMap[bookingIdKey];
     if (Array.isArray(bookingParts) && bookingParts.length > 0) {
       // Map booking parts to modal rows. Support different naming conventions from backend.
@@ -459,39 +499,82 @@ const JobCards = () => {
       } catch (err) {
         console.error('Failed preparing totals for AddJobCardsDetails', err);
       }
-      // If services were selected, call UpdateBookingServices API to persist to booking
+      // If services were selected, call UpdateBookingService API to persist services with their parts
       try {
         const bookingId = jobCardData.J_BookingID || currentJobCard?.J_BookingID;
-        const newServiceIds = (selectedServices || []).map(id => parseInt(id, 10)).filter(Boolean);
+        const newServiceIds = (selectedServices || []).map(id => id).filter(Boolean);
         if (bookingId && newServiceIds.length > 0) {
-          const payload = { J_BookingID: String(bookingId), NewServiceIDs: newServiceIds };
-          const resp = await updateBookingServices(payload);
+          try {
+            const serviceParts = (selectedServices || []).map(sid => {
+              const partsForSvc = (selectedPartsByService && selectedPartsByService[String(sid)]) || [];
+              const partsArray = (partsForSvc || []).map(p => ({ PartID: String(p.partId || ''), Quantity: String(p.qty || '0') })).filter(p => p.PartID && p.Quantity);
+              return { ServiceID: String(sid), Parts: partsArray };
+            });
+
+            const payload = { J_BookingID: String(bookingId), ServiceParts: serviceParts };
+            const resp = await updateBookingService(payload);
             if (resp?.StatusCode === 200) {
-              // success
-              // remove localStorage entries for this booking
-              try {
-                localStorage.removeItem(`jobcard_selected_services_${bookingId}`);
-                localStorage.removeItem('jobcard_selected_services_temp');
-              } catch (e) {}
-              notifications.push(resp.Result || 'Services updated successfully');
+              try { localStorage.removeItem(`jobcard_selected_services_${bookingId}`); localStorage.removeItem('jobcard_selected_services_temp'); } catch (e) {}
+              notifications.push(resp.Result || 'Services & parts updated successfully');
             } else {
-              console.warn('UpdateBookingServices failed', resp);
+              console.warn('UpdateBookingService returned non-200', resp);
               notifications.push(resp?.Message || 'Failed to update booking services');
             }
+          } catch (errSvc) {
+            console.error('UpdateBookingService failed, falling back to UpdateBookingServices', errSvc);
+            try {
+              const fallback = { J_BookingID: String(bookingId), NewServiceIDs: newServiceIds.map(n => parseInt(n, 10)).filter(Boolean) };
+              const resp = await updateBookingServices(fallback);
+              if (resp?.StatusCode === 200) {
+                try { localStorage.removeItem(`jobcard_selected_services_${bookingId}`); localStorage.removeItem('jobcard_selected_services_temp'); } catch (e) {}
+                notifications.push(resp.Result || 'Services updated successfully (fallback)');
+              } else {
+                notifications.push(resp?.Message || 'Failed to update booking services (fallback)');
+              }
+            } catch (e) {
+              console.error('Fallback updateBookingServices also failed', e);
+              notifications.push('Failed to update booking services');
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to update booking services', err);
-        // non-blocking
       }
 
-      // After updating job card and services, persist selected parts to booking via API
+      // After updating job card and services, persist selected parts to booking via API.
+      // Build PartsList items with optional ServiceID so backend can map parts to services (avoid NULL ServiceID rows).
       try {
         const bookingId = jobCardData.J_BookingID || currentJobCard?.J_BookingID;
-  const partsList = (flattenedParts || []).map(p => ({ PartID: parseInt(p.partId || 0, 10) || 0, Quantity: parseInt(p.qty || 0, 10) || 0 })).filter(p => p.PartID && p.Quantity);
-        if (bookingId && partsList.length > 0) {
-          const payload = { J_BookingID: String(bookingId), PartsList: partsList };
+        // Build parts list by iterating grouped parts so we can include the service association
+        const partsListFromGroups = [];
+        try {
+          const groups = selectedPartsByService || {};
+          Object.keys(groups).forEach(key => {
+            const rows = Array.isArray(groups[key]) ? groups[key] : [];
+            const svcId = key === 'unassigned' ? null : (parseInt(key, 10) || null);
+            rows.forEach(p => {
+              const pid = parseInt(p.partId || 0, 10) || 0;
+              const qty = parseInt(p.qty || 0, 10) || 0;
+              if (pid && qty) {
+                const item = { PartID: pid, Quantity: qty };
+                if (svcId != null) item.ServiceID = svcId;
+                partsListFromGroups.push(item);
+              }
+            });
+          });
+        } catch (e) {
+          // fallback to flattened parts if grouping failed
+          (flattenedParts || []).forEach(p => {
+            const pid = parseInt(p.partId || 0, 10) || 0;
+            const qty = parseInt(p.qty || 0, 10) || 0;
+            if (pid && qty) partsListFromGroups.push({ PartID: pid, Quantity: qty });
+          });
+        }
+
+        if (bookingId && partsListFromGroups.length > 0) {
+          const payload = { J_BookingID: String(bookingId), PartsList: partsListFromGroups };
           const respParts = await addBookingParts(payload);
-            if (respParts?.StatusCode === 200) {
+          if (respParts?.StatusCode === 200) {
             // refresh booking parts for this booking
             try {
               const partsResp = await getBookingPartsByBookingID(bookingId);
@@ -502,11 +585,11 @@ const JobCards = () => {
               console.warn('Failed to refresh booking parts', err);
             }
 
-              notifications.push(respParts.Result || 'Parts added successfully');
-            } else {
-              console.warn('AddBookingParts failed', respParts);
-              notifications.push(respParts?.Message || 'Failed to add parts to booking');
-            }
+            notifications.push(respParts.Result || 'Parts added successfully');
+          } else {
+            console.warn('AddBookingParts failed', respParts);
+            notifications.push(respParts?.Message || 'Failed to add parts to booking');
+          }
         }
       } catch (err) {
         console.error('Failed to add booking parts', err);

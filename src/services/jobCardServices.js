@@ -77,6 +77,17 @@ export const getBookingPartsByBookingID = async (bookingId) => {
   }
 };
 
+// Fetch booking services with their associated parts (structured response)
+export const getBookingServicesWithParts = async (bookingId) => {
+  try {
+    const { data } = await axios.get(`JobCards/GetBookingServicesWithParts?BookingID=${bookingId}`);
+    return data;
+  } catch (error) {
+    console.error('Error fetching booking services with parts for', bookingId, error);
+    throw error;
+  }
+};
+
 // Function to delete a job card
 export const deleteJobCard = async (jobCardData) => {
   try {
@@ -86,6 +97,20 @@ export const deleteJobCard = async (jobCardData) => {
     return data;
   } catch (error) {
     console.error("Error deleting job card:", error);
+    throw error;
+  }
+};
+
+// Backwards-compatible: if backend exposes UpdateBookingService (singular) accept a structured ServiceParts payload
+export const updateBookingService = async (payload) => {
+  try {
+    console.log('Calling UpdateBookingService with payload:', payload);
+    // Use the backend action that successfully accepts ServiceParts (plural)
+    const { data } = await axios.post(`JobCards/UpdateBookingServices`, payload);
+    console.log('UpdateBookingService response:', data);
+    return data;
+  } catch (error) {
+    console.error('Error calling UpdateBookingService:', error);
     throw error;
   }
 };

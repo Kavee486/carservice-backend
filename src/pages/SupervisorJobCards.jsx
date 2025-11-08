@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { GetAllJobCards, UpdateJobCard } from '../actions/jobCardActions';
 import { GetAllJobCardItems } from '../actions/jobCardItemActions';
 import { fetchAllParts, fetchAllServices } from '../services/jobCardItemServices';
-import { updateBookingServices, addBookingParts, getBookingPartsByBookingID, addJobCard as addJobCardService } from '../services/jobCardServices';
+import { updateBookingServices, updateBookingService, addBookingParts, getBookingPartsByBookingID, getBookingServicesWithParts, addJobCard as addJobCardService } from '../services/jobCardServices';
 import DashboardLayout from '../components/DashboardLayout';
 import dayjs from 'dayjs';
 import { Edit3, ClipboardList, Search, Plus, Package, Filter, RefreshCw, Calendar, User, Tag, Trash2, AlertCircle } from 'lucide-react';
@@ -165,19 +165,46 @@ const SupervisorJobCards = () => {
       // ignore
     }
 
-    // load parts for booking
+    // load structured services with parts for booking (prefer authoritative grouped data)
     try {
-      const resp = await getBookingPartsByBookingID(String(bookingId));
-      if (resp?.StatusCode === 200) {
-        const rows = (resp.ResultSet || []).map(bp => ({ partId: String(bp.PartID || bp.P_PartID || bp.PartId || ''), qty: parseInt(bp.Quantity || bp.Qty || 1, 10) || 1, unitPrice: parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.J_Charge || 0) || 0 }));
-        // place fetched booking parts into 'unassigned' group by default and sync flattened rows
-        setSelectedPartsByService({ unassigned: rows });
-        setSelectedPartsRows(rows);
+      const svcResp = await getBookingServicesWithParts(String(bookingId));
+      if (svcResp?.StatusCode === 200 && Array.isArray(svcResp.ResultSet) && svcResp.ResultSet.length > 0) {
+        const groups = {};
+        const svcSet = new Set();
+        svcResp.ResultSet.forEach(row => {
+          const sid = row.ServiceID || row.S_ServiceID || row.ServiceId || row.ServiceID;
+          const pid = row.PartID || row.P_PartID || row.PartId || row.PARTID || row.PartID;
+          const qty = parseInt(row.Quantity || row.Qty || 0, 10) || 0;
+          const unit = parseFloat(row.UnitPrice || row.P_UnitPrice || row.UnitPrice || 0) || 0;
+          if (sid != null && String(sid).trim() !== '') {
+            const key = String(sid);
+            svcSet.add(String(sid));
+            if (!Array.isArray(groups[key])) groups[key] = [];
+            if (pid) groups[key].push({ partId: String(pid), qty: qty || 1, unitPrice: unit });
+          } else {
+            if (!Array.isArray(groups['unassigned'])) groups['unassigned'] = [];
+            if (pid) groups['unassigned'].push({ partId: String(pid), qty: qty || 1, unitPrice: unit });
+          }
+        });
+        const svcArray = Array.from(svcSet);
+        if (svcArray.length > 0) setSelectedServices(svcArray.map(id => String(id)));
+        setSelectedPartsByService(groups);
+        setSelectedPartsRows(flattenSelectedParts(groups));
       } else {
-        setSelectedPartsByService({});
-        setSelectedPartsRows([]);
+        // fallback to flat parts endpoint
+        const resp = await getBookingPartsByBookingID(String(bookingId));
+        if (resp?.StatusCode === 200) {
+          const rows = (resp.ResultSet || []).map(bp => ({ partId: String(bp.PartID || bp.P_PartID || bp.PartId || ''), qty: parseInt(bp.Quantity || bp.Qty || 1, 10) || 1, unitPrice: parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.J_Charge || 0) || 0 }));
+          setSelectedPartsByService({ unassigned: rows });
+          setSelectedPartsRows(rows);
+        } else {
+          setSelectedPartsByService({});
+          setSelectedPartsRows([]);
+        }
       }
     } catch (e) {
+      // if anything fails, fallback to empty
+      console.warn('Failed to fetch structured booking services with parts', e);
       setSelectedPartsByService({});
       setSelectedPartsRows([]);
     }
@@ -339,26 +366,96 @@ const SupervisorJobCards = () => {
   const inProgressJobCards = (jobCards || []).filter(jc => String(jc.J_JobCardStatus || '').toLowerCase() === 'in progress');
 
       if (newServiceIds.length > 0) {
-        const respSvc = await updateBookingServices({ J_BookingID: String(currentBookingId), NewServiceIDs: newServiceIds });
-        // update local bookingServicesMap so UI shows added services immediately
+        // Build ServiceParts payload with per-service parts when available
         try {
-          const names = (newServiceIds || []).map(id => {
-            const svc = servicesList.find(x => String(x.S_ServiceID) === String(id) || String(x.S_ServiceID) === String(parseInt(id,10)));
-            return svc?.S_ServiceName || String(id);
+          const serviceParts = (selectedServices || []).map(sid => {
+            const partsForSvc = (selectedPartsByService && selectedPartsByService[String(sid)]) || [];
+            const partsArray = (partsForSvc || []).map(p => ({ PartID: String(p.partId || ''), Quantity: String(p.qty || '0') })).filter(p => p.PartID && p.Quantity);
+            return { ServiceID: String(sid), Parts: partsArray };
           });
-          setBookingServicesMap(prev => ({ ...prev, [String(currentBookingId)]: names }));
-        } catch (e) {}
-        // remove temp storage
-        try { localStorage.removeItem(`jobcard_selected_services_${currentBookingId}`); } catch(e){}
+
+          const payload = { J_BookingID: String(currentBookingId), ServiceParts: serviceParts };
+          const respSvc = await updateBookingService(payload);
+          // Check backend response and fallback if it didn't succeed
+          if (respSvc?.StatusCode === 200) {
+            try {
+              const names = (newServiceIds || []).map(id => {
+                const svc = servicesList.find(x => String(x.S_ServiceID) === String(id) || String(x.S_ServiceID) === String(parseInt(id,10)));
+                return svc?.S_ServiceName || String(id);
+              });
+              setBookingServicesMap(prev => ({ ...prev, [String(currentBookingId)]: names }));
+            } catch (e) {}
+            try { localStorage.removeItem(`jobcard_selected_services_${currentBookingId}`); } catch(e){}
+          } else {
+            console.warn('UpdateBookingServices returned non-200 for supervisor', respSvc);
+            // fallback to previous behavior (updateBookingServices with simple ids)
+            try {
+              const resp = await updateBookingServices({ J_BookingID: String(currentBookingId), NewServiceIDs: newServiceIds });
+              try {
+                const names = (newServiceIds || []).map(id => {
+                  const svc = servicesList.find(x => String(x.S_ServiceID) === String(id) || String(x.S_ServiceID) === String(parseInt(id,10)));
+                  return svc?.S_ServiceName || String(id);
+                });
+                setBookingServicesMap(prev => ({ ...prev, [String(currentBookingId)]: names }));
+              } catch (e) {}
+              try { localStorage.removeItem(`jobcard_selected_services_${currentBookingId}`); } catch(e){}
+            } catch (e) {
+              console.error('Fallback updateBookingServices also failed for supervisor', e);
+            }
+          }
+        } catch (err) {
+          console.error('UpdateBookingService failed in supervisor flow, falling back to UpdateBookingServices', err);
+          // fallback to previous behavior (updateBookingServices with simple ids)
+          try {
+            const resp = await updateBookingServices({ J_BookingID: String(currentBookingId), NewServiceIDs: newServiceIds });
+            try {
+              const names = (newServiceIds || []).map(id => {
+                const svc = servicesList.find(x => String(x.S_ServiceID) === String(id) || String(x.S_ServiceID) === String(parseInt(id,10)));
+                return svc?.S_ServiceName || String(id);
+              });
+              setBookingServicesMap(prev => ({ ...prev, [String(currentBookingId)]: names }));
+            } catch (e) {}
+            try { localStorage.removeItem(`jobcard_selected_services_${currentBookingId}`); } catch(e){}
+          } catch (e) {
+            console.error('Fallback updateBookingServices also failed for supervisor', e);
+          }
+        }
       }
 
       // Ensure flattened parts reflect grouped parts before submitting
       const flattenedParts = flattenSelectedParts(selectedPartsByService);
       setSelectedPartsRows(flattenedParts);
-      // Update booking parts
-      const partsPayload = (flattenedParts || []).map(p => ({ PartID: parseInt(p.partId || 0, 10) || 0, Quantity: parseInt(p.qty || 0, 10) || 0 })).filter(p => p.PartID && p.Quantity);
-      if (partsPayload.length > 0) {
-        await addBookingParts({ J_BookingID: String(currentBookingId), PartsList: partsPayload });
+      // Update booking parts: include ServiceID per item so backend records association (avoid NULL ServiceID rows)
+      try {
+        const partsListFromGroups = [];
+        try {
+          const groups = selectedPartsByService || {};
+          Object.keys(groups).forEach(key => {
+            const rows = Array.isArray(groups[key]) ? groups[key] : [];
+            const svcId = key === 'unassigned' ? null : (parseInt(key, 10) || null);
+            rows.forEach(p => {
+              const pid = parseInt(p.partId || 0, 10) || 0;
+              const qty = parseInt(p.qty || 0, 10) || 0;
+              if (pid && qty) {
+                const item = { PartID: pid, Quantity: qty };
+                if (svcId != null) item.ServiceID = svcId;
+                partsListFromGroups.push(item);
+              }
+            });
+          });
+        } catch (e) {
+          (flattenedParts || []).forEach(p => {
+            const pid = parseInt(p.partId || 0, 10) || 0;
+            const qty = parseInt(p.qty || 0, 10) || 0;
+            if (pid && qty) partsListFromGroups.push({ PartID: pid, Quantity: qty });
+          });
+        }
+
+        if (partsListFromGroups.length > 0) {
+          await addBookingParts({ J_BookingID: String(currentBookingId), PartsList: partsListFromGroups });
+        }
+      } catch (e) {
+        console.warn('Failed to add booking parts (supervisor)', e);
       }
 
       // store totals via addJobCardService similar to admin flow
