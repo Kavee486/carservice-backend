@@ -17,8 +17,31 @@ const SupervisorDashboardContent = () => {
     return dayjs(d).isSame(today, 'day');
   };
 
+  // helper to deduplicate job cards by booking id while preserving order
+  const uniqueByBooking = (arr) => {
+    const seen = new Set();
+    const out = [];
+    for (const it of (arr || [])) {
+      const key = String(it?.J_BookingID ?? it?.BookingID ?? '');
+      if (!key) {
+        // include items without booking id
+        out.push(it);
+        continue;
+      }
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(it);
+      }
+    }
+    return out;
+  };
+
   const todayInProgress = (jobCards || []).filter(j => String(j.J_JobCardStatus).toLowerCase() === 'in progress' && isSameDay(j.J_CreatedDate));
   const todayDone = (jobCards || []).filter(j => String(j.J_JobCardStatus).toLowerCase() === 'completed' && isSameDay(j.J_CreatedDate));
+
+  // Deduplicate by booking so each booking appears only once on the dashboard
+  const todayInProgressUnique = uniqueByBooking(todayInProgress);
+  const todayDoneUnique = uniqueByBooking(todayDone);
 
   return (
     <div className="h-full p-4 md:p-6">
@@ -60,11 +83,11 @@ const SupervisorDashboardContent = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-xl shadow p-6">
             <h3 className="text-lg font-semibold mb-4">Today's In Progress</h3>
-            {todayInProgress.length === 0 ? (
+            {todayInProgressUnique.length === 0 ? (
               <div className="text-sm text-gray-500">No in-progress job cards for today.</div>
             ) : (
               <ul className="space-y-3">
-                {todayInProgress.map(j => (
+                {todayInProgressUnique.map(j => (
                   <li key={j.J_JobCardID} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:shadow-sm">
                     <div>
                       <div className="font-medium">JC-{String(j.J_JobCardID).padStart(4,'0')} — Booking {j.J_BookingID}</div>
@@ -79,11 +102,11 @@ const SupervisorDashboardContent = () => {
 
           <div className="bg-white rounded-xl shadow p-6">
             <h3 className="text-lg font-semibold mb-4">Today's Completed</h3>
-            {todayDone.length === 0 ? (
+            {todayDoneUnique.length === 0 ? (
               <div className="text-sm text-gray-500">No completed job cards for today.</div>
             ) : (
               <ul className="space-y-3">
-                {todayDone.map(j => (
+                {todayDoneUnique.map(j => (
                   <li key={j.J_JobCardID} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:shadow-sm">
                     <div>
                       <div className="font-medium">JC-{String(j.J_JobCardID).padStart(4,'0')} — Booking {j.J_BookingID}</div>
