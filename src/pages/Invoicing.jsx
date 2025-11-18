@@ -287,6 +287,21 @@ const Invoices = () => {
     })
     : [];
 
+  // Sort filtered invoices newest-first (by numeric Invoice ID). Fallback to invoice date if needed.
+  const sortedInvoices = (filteredInvoices || []).slice().sort((a, b) => {
+    const aId = parseInt(a?.I_InvoiceID || a?.I_InvoiceNo || 0, 10) || 0;
+    const bId = parseInt(b?.I_InvoiceID || b?.I_InvoiceNo || 0, 10) || 0;
+    if (bId !== aId) return bId - aId;
+    // fallback to invoice date (newest first)
+    try {
+      const aDate = a?.I_InvoiceDate ? new Date(a.I_InvoiceDate).getTime() : 0;
+      const bDate = b?.I_InvoiceDate ? new Date(b.I_InvoiceDate).getTime() : 0;
+      return (bDate || 0) - (aDate || 0);
+    } catch (e) {
+      return 0;
+    }
+  });
+
   // Calculate statistics
   const totalInvoices = invoices?.length || 0;
   const totalAmount = invoices?.reduce((total, invoice) => total + parseFloat(invoice.I_TotalAmount || 0), 0) || 0;
@@ -462,14 +477,14 @@ const Invoices = () => {
           </div>
 
           <div className="p-6">
-            {filteredInvoices.length > 0 ? (
+            {sortedInvoices.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-300">
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Invoice ID</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Booking ID</th>
-                      <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Price</th>
+                      <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Price(Rs)</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Job Card Status</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Invoice Date</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Payment Status</th>
@@ -477,7 +492,7 @@ const Invoices = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredInvoices.map((invoice) => (
+                    {sortedInvoices.map((invoice) => (
                       <tr key={invoice.I_InvoiceID} className="border-b border-gray-200 hover:bg-gray-50">
                         <td className="py-4 px-4 text-base font-medium text-gray-900">{invoice.I_InvoiceID}</td>
                         <td className="py-4 px-4 text-base text-gray-700">{invoice.J_BookingID}</td>

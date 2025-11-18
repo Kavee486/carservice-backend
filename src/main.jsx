@@ -7,7 +7,8 @@ import store from './store';
 import axios from 'axios';
 
 // Configure axios
-axios.defaults.baseURL = 'http://localhost:60748';
+axios.defaults.baseURL = 'https://automechbackend.dockyardsoftware.com/';
+//axios.defaults.baseURL = 'http://localhost:60748/';
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 
 createRoot(document.getElementById('root')).render(

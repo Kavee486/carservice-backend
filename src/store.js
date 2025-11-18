@@ -4,7 +4,7 @@ import { serviceListReducer } from './reducers/serviceReducer';
 import { partsInventoryReducer } from './reducers/partsInventoryReducer';
 import { customerListReducer } from './reducers/customerReducer';
 import { appointmentListReducer } from './reducers/appointmentReducer';
-import { jobCardListReducer } from './reducers/jobCardReducer';
+import { jobCardListReducer, technicianListReducer } from './reducers/jobCardReducer';
 import { jobCardItemListReducer } from './reducers/jobCardItemReducer';
 import { vehicleListReducer } from './reducers/vehicleReducer';
 import { adminReducer } from './reducers/adminReducer';
@@ -26,6 +26,7 @@ const rootReducer = combineReducers({
   userSignup: userSignupReducer,
   auth: authReducer,
   categoryList: categoryListReducer,
+  technicianList: technicianListReducer, // Add this line
   invoiceList: invoiceListReducer, // Add invoice reducer here
 });
 

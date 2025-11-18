@@ -93,9 +93,9 @@ const Services = () => {
     dispatch(GetAllServices());
   };
 
-  // Format currency as Rs
+  // Format currency as number only
   const formatCurrency = (value) => {
-    return `Rs ${parseFloat(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+    return parseFloat(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   };
 
   // Format time display
@@ -206,60 +206,7 @@ const Services = () => {
           </div>
         </div>
 
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {/* Total Services Card */}
-          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-gray-500 mb-1">Total Services</div>
-                <div className="text-xl font-bold text-gray-900">{serviceStats.total}</div>
-              </div>
-              <div className="p-2 rounded-full bg-blue-100 text-blue-600">
-                <Wrench className="h-5 w-5" />
-              </div>
-            </div>
-          </div>
-
-          {/* Total Value Card */}
-          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-gray-500 mb-1">Total Value</div>
-                <div className="text-xl font-bold text-gray-900">{formatCurrency(serviceStats.totalValue)}</div>
-              </div>
-              <div className="p-2 rounded-full bg-green-100 text-green-600">
-                <DollarSign className="h-5 w-5" />
-              </div>
-            </div>
-          </div>
-
-          {/* Total Time Card */}
-          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-gray-500 mb-1">Total Time</div>
-                <div className="text-xl font-bold text-gray-900">{serviceStats.totalTime} min</div>
-              </div>
-              <div className="p-2 rounded-full bg-purple-100 text-purple-600">
-                <Clock className="h-5 w-5" />
-              </div>
-            </div>
-          </div>
-
-          {/* Average Time Card */}
-          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-gray-500 mb-1">Avg. Time</div>
-                <div className="text-xl font-bold text-gray-900">{serviceStats.averageTime} min</div>
-              </div>
-              <div className="p-2 rounded-full bg-orange-100 text-orange-600">
-                <Zap className="h-5 w-5" />
-              </div>
-            </div>
-          </div>
-        </div>
+        
 
         {/* Filters and Search - Reduced height */}
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
@@ -307,7 +254,7 @@ const Services = () => {
                     <tr className="border-b border-gray-300">
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Service Name</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Description</th>
-                      <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Base Charge</th>
+                      <th className="text-right py-4 px-4 text-gray-700 font-medium text-sm">Base Charge (Rs)</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Time</th>
                       <th className="text-left py-4 px-4 text-gray-700 font-medium text-sm">Actions</th>
                     </tr>
@@ -321,9 +268,8 @@ const Services = () => {
                             <p className="text-sm leading-relaxed text-gray-600">{service.S_Description || '—'}</p>
                           </div>
                         </td>
-                        <td className="py-4 px-4">
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                            <DollarSign className="h-3 w-3 mr-1" />
+                        <td className="py-4 px-4 text-right">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 justify-end">
                             {formatCurrency(service.S_BaseCharge)}
                           </span>
                         </td>
@@ -421,7 +367,7 @@ const Services = () => {
                   </div>
 
                   <div>
-                    <label className="block text-base font-medium text-gray-700 mb-1">Base Charge (Rs)</label>
+                    <label className="block text-base font-medium text-gray-700 mb-1">Base Charge</label>
                     <input
                       name="baseCharge"
                       type="number"

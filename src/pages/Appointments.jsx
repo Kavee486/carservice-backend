@@ -3,7 +3,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import {
   Table, Button, Modal, Form, Input, InputNumber,
   Card, Space, Typography, message, Spin, Grid,
-  Tag, Badge, Dropdown, TimePicker, Divider, Statistic,
+  Tag, Badge, Dropdown, Divider, Statistic,
   Row, Col, Avatar, Progress, Tooltip
 } from 'antd';
 import {
@@ -14,7 +14,7 @@ import {
   DollarOutlined, TeamOutlined, RocketOutlined, FilterOutlined
 } from '@ant-design/icons';
 import { authService } from '../services/authServices';
-import { getAppointments, updateAppointmentStatus, updateAppointmentTimes } from '../actions/appointmentActions';
+import { getAppointments, updateAppointmentStatus } from '../actions/appointmentActions';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
@@ -22,19 +22,16 @@ const { useBreakpoint } = Grid;
 
 const Appointments = () => {
   const dispatch = useDispatch();
-  const { appointments, loading, error, timeUpdating } = useSelector(state => state.appointmentList);
+  const { appointments, loading, error } = useSelector(state => state.appointmentList);
   const screens = useBreakpoint();
   const user = authService.getCurrentUser();
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isInvoiceModalVisible, setIsInvoiceModalVisible] = useState(false);
-  const [isTimeModalVisible, setIsTimeModalVisible] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [expandedRowKeys, setExpandedRowKeys] = useState([]);
   const [updatingStatus, setUpdatingStatus] = useState({});
-  const [updatingTimes, setUpdatingTimes] = useState({});
   const [invoiceData, setInvoiceData] = useState(null);
-  const [timeForm] = Form.useForm();
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -43,21 +40,31 @@ const Appointments = () => {
     rejected: 0
   });
 
+  // Sort appointments by Booking ID in descending order
+  const sortedAppointments = React.useMemo(() => {
+    if (!appointments) return [];
+    return [...appointments].sort((a, b) => {
+      const idA = parseInt(a.B_BookingID) || 0;
+      const idB = parseInt(b.B_BookingID) || 0;
+      return idB - idA; // Descending order
+    });
+  }, [appointments]);
+
   useEffect(() => {
     dispatch(getAppointments());
   }, [dispatch]);
 
   useEffect(() => {
-    if (appointments) {
-      const total = appointments.length;
-      const pending = appointments.filter(app => app.B_BookingStatus?.toLowerCase() === 'pending').length;
-      const approved = appointments.filter(app => app.B_BookingStatus?.toLowerCase() === 'approved').length;
-      const completed = appointments.filter(app => app.B_BookingStatus?.toLowerCase() === 'completed').length;
-      const rejected = appointments.filter(app => app.B_BookingStatus?.toLowerCase() === 'rejected' || app.B_BookingStatus?.toLowerCase() === 'disapproved').length;
+    if (sortedAppointments) {
+      const total = sortedAppointments.length;
+      const pending = sortedAppointments.filter(app => app.B_BookingStatus?.toLowerCase() === 'pending').length;
+      const approved = sortedAppointments.filter(app => app.B_BookingStatus?.toLowerCase() === 'approved').length;
+      const completed = sortedAppointments.filter(app => app.B_BookingStatus?.toLowerCase() === 'completed').length;
+      const rejected = sortedAppointments.filter(app => app.B_BookingStatus?.toLowerCase() === 'rejected' || app.B_BookingStatus?.toLowerCase() === 'disapproved').length;
 
       setStats({ total, pending, approved, completed, rejected });
     }
-  }, [appointments]);
+  }, [sortedAppointments]);
 
   useEffect(() => {
     if (error) {
@@ -65,10 +72,9 @@ const Appointments = () => {
     }
   }, [error]);
 
-  // --- Date/time helpers moved up so they are available to functions defined below ---
+  // Date/time helpers
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    // backend sometimes sends dates like "8/1/2023 12:00:00 AM" - Date can parse this
     const d = new Date(dateString);
     if (isNaN(d.getTime())) return 'N/A';
     return d.toLocaleDateString('en-US', {
@@ -81,10 +87,8 @@ const Appointments = () => {
   const formatTime = (timeString) => {
     if (!timeString || timeString === '00:00:00' || timeString === '') return 'Not set';
     try {
-      // If timeString contains a full datetime, extract time portion
       if (timeString.includes(' ')) {
         const parts = timeString.split(' ');
-        // try last part for time
         const maybeTime = parts[parts.length - 1];
         if (/^\d{1,2}:\d{2}:\d{2}$/.test(maybeTime)) {
           return dayjs(maybeTime, 'HH:mm:ss').format('hh:mm A');
@@ -113,56 +117,20 @@ const Appointments = () => {
     setIsModalVisible(true);
   };
 
-  const showTimeEditor = (appointment) => {
-    setSelectedAppointment(appointment);
-    timeForm.setFieldsValue({
-      startingTime: getStartTime(appointment) ? dayjs(getStartTime(appointment), 'HH:mm:ss') : null,
-      endingTime: getEndTime(appointment) ? dayjs(getEndTime(appointment), 'HH:mm:ss') : null
-    });
-    setIsTimeModalVisible(true);
-  };
-
   const handleCancel = () => {
     setIsModalVisible(false);
-  };
-
-  const handleTimeModalCancel = () => {
-    setIsTimeModalVisible(false);
-    timeForm.resetFields();
-  };
-
-  const handleTimeUpdate = async (values) => {
-    if (!selectedAppointment) return;
-
-    try {
-      setUpdatingTimes(prev => ({ ...prev, [selectedAppointment.B_BookingID]: true }));
-      
-      // Format times to HH:mm:ss format for backend
-      const startingTime = values.startingTime ? values.startingTime.format('HH:mm:ss') : null;
-      const endingTime = values.endingTime ? values.endingTime.format('HH:mm:ss') : null;
-
-      await dispatch(updateAppointmentTimes(
-        selectedAppointment.B_BookingID, 
-        startingTime, 
-        endingTime
-      ));
-      
-      message.success('Appointment times updated successfully and SMS sent to customer');
-      setIsTimeModalVisible(false);
-      timeForm.resetFields();
-      dispatch(getAppointments()); // Refresh the list
-    } catch (err) {
-      message.error('Failed to update appointment times');
-    } finally {
-      setUpdatingTimes(prev => ({ ...prev, [selectedAppointment.B_BookingID]: false }));
-    }
   };
 
   const handleStatusChange = async (bookingId, newStatus) => {
     try {
       setUpdatingStatus(prev => ({ ...prev, [bookingId]: true }));
-      await dispatch(updateAppointmentStatus(bookingId, newStatus));
-      message.success('Appointment status updated successfully');
+      const result = await dispatch(updateAppointmentStatus(bookingId, newStatus));
+      if (result && result.success) {
+        message.success('Appointment status updated successfully');
+      } else {
+        console.error('Update returned failure:', result);
+        message.error(result?.message || 'Failed to update appointment status');
+      }
 
       if (newStatus === 'completed') {
         generateInvoice(bookingId);
@@ -176,7 +144,7 @@ const Appointments = () => {
 
   const generateInvoice = async (bookingId) => {
     try {
-      const appointment = appointments.find(app => app.B_BookingID === bookingId);
+      const appointment = sortedAppointments.find(app => app.B_BookingID === bookingId);
 
       const mockInvoiceData = {
         invoiceNumber: `INV-${bookingId}-${Date.now()}`,
@@ -277,8 +245,6 @@ const Appointments = () => {
     return { color, icon, text, bgColor };
   };
 
-  
-
   const formatPhoneNumber = (phone) => {
     if (!phone) return 'N/A';
     const cleaned = phone.replace(/\D/g, '');
@@ -329,7 +295,6 @@ const Appointments = () => {
     const status = record.B_BookingStatus?.toLowerCase();
     const { color, icon, text, bgColor } = getStatusBadge(record.B_BookingStatus);
     const isLoading = updatingStatus[record.B_BookingID];
-    const isTimeUpdating = updatingTimes[record.B_BookingID];
 
     return (
       <Card
@@ -348,7 +313,7 @@ const Appointments = () => {
               <Text strong className="text-lg font-semibold text-gray-900 block">
                 {record.B_CustomerName || 'Unknown Customer'}
               </Text>
-              <Text className="text-sm text-gray-500">#{record.B_BookingID}</Text>
+              <Text className="text-sm text-gray-500">{record.B_BookingID}</Text>
             </div>
           </div>
           <Tag
@@ -392,18 +357,6 @@ const Appointments = () => {
                 className="hover:bg-blue-50 rounded-lg w-10 h-10 flex items-center justify-center"
               />
             </Tooltip>
-
-            {(user?.role === 'admin' || user?.role === 'technician') && (
-              <Tooltip title="Edit Times">
-                <Button
-                  type="text"
-                  icon={<EditOutlined className="text-green-600" />}
-                  onClick={() => showTimeEditor(record)}
-                  loading={isTimeUpdating}
-                  className="hover:bg-green-50 rounded-lg w-10 h-10 flex items-center justify-center"
-                />
-              </Tooltip>
-            )}
           </Space>
 
           <Button
@@ -496,16 +449,22 @@ const Appointments = () => {
 
   const columns = [
     {
-      title: <span className="text-sm font-semibold text-gray-700">Booking</span>,
+      title: <span className="text-sm font-semibold text-gray-700">Booking ID</span>,
       dataIndex: 'B_BookingID',
       key: 'B_BookingID',
       render: (text) => (
         <div className="flex items-center">
           <Avatar size="small" icon={<UserOutlined />} className="bg-blue-100 text-blue-600 mr-2" />
-          <Text strong className="text-base font-semibold text-gray-900">#{text}</Text>
+          <Text strong className="text-base font-semibold text-gray-900">{text}</Text>
         </div>
       ),
       width: 100,
+      sorter: (a, b) => {
+        const idA = parseInt(a.B_BookingID) || 0;
+        const idB = parseInt(b.B_BookingID) || 0;
+        return idB - idA;
+      },
+      defaultSortOrder: 'descend',
     },
     {
       title: <span className="text-sm font-semibold text-gray-700">Customer</span>,
@@ -589,11 +548,10 @@ const Appointments = () => {
     {
       title: <span className="text-sm font-semibold text-gray-700">Actions</span>,
       key: 'actions',
-      width: 200,
+      width: 150,
       render: (_, record) => {
         const status = record.B_BookingStatus?.toLowerCase();
         const isLoading = updatingStatus[record.B_BookingID];
-        const isTimeUpdating = updatingTimes[record.B_BookingID];
 
         return (
           <Space size="small">
@@ -605,18 +563,6 @@ const Appointments = () => {
                 className="hover:bg-blue-50 rounded-lg w-10 h-10 flex items-center justify-center"
               />
             </Tooltip>
-
-            {(user?.role === 'admin' || user?.role === 'technician') && (
-              <Tooltip title="Edit Times">
-                <Button
-                  type="text"
-                  icon={<EditOutlined className="text-green-600" />}
-                  onClick={() => showTimeEditor(record)}
-                  loading={isTimeUpdating}
-                  className="hover:bg-green-50 rounded-lg w-10 h-10 flex items-center justify-center"
-                />
-              </Tooltip>
-            )}
 
             {(user?.role === 'admin' || user?.role === 'technician') && (
               <Dropdown
@@ -644,17 +590,17 @@ const Appointments = () => {
                       onClick: () => handleStatusChange(record.B_BookingID, 'rejected'),
                       disabled: status === 'rejected' || status === 'completed' || isLoading
                     },
-                    {
-                      key: 'complete',
-                      label: (
-                        <div className="flex items-center px-2 py-1">
-                          <CheckCircleOutlined className="text-blue-600 mr-2" />
-                          <span>Complete</span>
-                        </div>
-                      ),
-                      onClick: () => handleStatusChange(record.B_BookingID, 'completed'),
-                      disabled: status === 'completed' || isLoading
-                    }
+                    // {
+                    //   key: 'complete',
+                    //   label: (
+                    //     <div className="flex items-center px-2 py-1">
+                    //       <CheckCircleOutlined className="text-blue-600 mr-2" />
+                    //       <span>Complete</span>
+                    //     </div>
+                    //   ),
+                    //   onClick: () => handleStatusChange(record.B_BookingID, 'completed'),
+                    //   disabled: status === 'completed' || isLoading
+                    // }
                   ]
                 }}
                 placement="bottomRight"
@@ -801,8 +747,8 @@ const Appointments = () => {
           {/* Mobile View */}
           {!screens.md && (
             <div className="md:hidden">
-              {appointments && appointments.length > 0 ? (
-                appointments.map(record => renderMobileCard(record))
+              {sortedAppointments && sortedAppointments.length > 0 ? (
+                sortedAppointments.map(record => renderMobileCard(record))
               ) : (
                 <div className="text-center py-12">
                   <CalendarOutlined className="text-4xl text-gray-300 mb-4" />
@@ -816,7 +762,7 @@ const Appointments = () => {
           {screens.md && (
             <Table
               columns={columns}
-              dataSource={appointments}
+              dataSource={sortedAppointments}
               rowKey="B_BookingID"
               pagination={{
                 pageSize: 10,
@@ -873,7 +819,7 @@ const Appointments = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <Text strong className="text-gray-700 block mb-1">Booking ID</Text>
-                  <Text className="text-gray-900">#{selectedAppointment.B_BookingID}</Text>
+                  <Text className="text-gray-900">{selectedAppointment.B_BookingID}</Text>
                 </div>
                 <div>
                   <Text strong className="text-gray-700 block mb-1">Customer Name</Text>
@@ -921,83 +867,6 @@ const Appointments = () => {
               </div>
             </div>
           )}
-        </Modal>
-
-        {/* Time Update Modal */}
-        <Modal
-          title={
-            <div className="text-center pb-4 border-b border-gray-200">
-              <span className="text-xl font-bold text-gray-900">
-                Update Appointment Times
-              </span>
-            </div>
-          }
-          open={isTimeModalVisible}
-          onCancel={handleTimeModalCancel}
-          footer={[
-            <Button
-              key="cancel"
-              onClick={handleTimeModalCancel}
-              className="px-6 text-sm font-medium border border-gray-300 hover:border-gray-400 rounded-lg h-10"
-            >
-              Cancel
-            </Button>,
-            <Button
-              key="submit"
-              type="primary"
-              loading={selectedAppointment && updatingTimes[selectedAppointment.B_BookingID]}
-              onClick={() => timeForm.submit()}
-              className="px-6 text-sm font-medium rounded-lg h-10 bg-blue-600 hover:bg-blue-700 border-0"
-            >
-              Update Times
-            </Button>,
-          ]}
-          width={screens.xs ? '95%' : 500}
-          centered
-          className="rounded-2xl"
-          bodyStyle={{ padding: '28px' }}
-        >
-          <Form
-            form={timeForm}
-            layout="vertical"
-            onFinish={handleTimeUpdate}
-            className="space-y-4"
-          >
-            <Form.Item
-              label="Starting Time"
-              name="startingTime"
-              rules={[
-                { required: true, message: 'Please select starting time' }
-              ]}
-            >
-              <TimePicker 
-                format="HH:mm:ss"
-                className="w-full rounded-lg h-10"
-                placeholder="Select starting time"
-              />
-            </Form.Item>
-            
-            <Form.Item
-              label="Ending Time"
-              name="endingTime"
-              rules={[
-                { required: true, message: 'Please select ending time' }
-              ]}
-            >
-              <TimePicker 
-                format="HH:mm:ss"
-                className="w-full rounded-lg h-10"
-                placeholder="Select ending time"
-              />
-            </Form.Item>
-            
-            <div className="bg-blue-50 p-3 rounded-lg">
-              <Text className="text-blue-700 text-sm">
-                <ExclamationCircleOutlined className="mr-2" />
-                An SMS will be automatically sent to the customer with the updated times.
-              </Text>
-            </div>
-          </Form>
         </Modal>
 
         {/* Invoice Modal */}

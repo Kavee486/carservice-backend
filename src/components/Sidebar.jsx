@@ -124,13 +124,9 @@ const Sidebar = ({ onLogout }) => {
       case USER_ROLES.TECHNICIAN:
         return [
           { icon: Home, label: 'Dashboard', path: '/technician' },
-          { icon: Clock, label: 'My Schedule', path: '/technician/schedule' },
-          { icon: Calendar, label: 'Appointments', path: '/technician/appointments' },
           { icon: Wrench, label: 'Job Cards', path: '/technician/job-cards' },
-          { icon: ClipboardList, label: 'Job Card Items', path: '/technician/job-card-items' },
           { icon: Package, label: 'Parts Inventory', path: '/technician/parts' },
           { icon: Car, label: 'Vehicles', path: '/technician/vehicles' },
-          { icon: Layers, label: 'Categories', path: '/technician/categories' },
           { icon: User, label: 'Profile', path: '/profile' },
         ];
       case USER_ROLES.CUSTOMER:
@@ -143,6 +139,7 @@ const Sidebar = ({ onLogout }) => {
       case USER_ROLES.SUPERVISOR:
         return [
           { icon: Home, label: 'Dashboard', path: '/supervisor' },
+          { icon: Users, label: 'User Management', path: '/supervisor/user-management' },
           { icon: FileText, label: 'Job Cards', path: '/supervisor/job-cards' },
           { icon: User, label: 'Profile', path: '/profile' },
         ];
@@ -188,7 +185,6 @@ const Sidebar = ({ onLogout }) => {
               className={`flex items-center justify-between w-full px-4 py-3 rounded-lg transition-colors ${parentActiveClass}`}
             >
               <div className="flex items-center">
-                {/* small left indicator when a child is active */}
                 {isSidebarVisible && (
                   <div className={`w-1 h-5 rounded mr-3 ${hasActiveChild ? 'bg-blue-300' : 'bg-transparent'}`} />
                 )}
@@ -286,7 +282,6 @@ const Sidebar = ({ onLogout }) => {
 
             {isSidebarVisible && (
                 <div className="leading-tight">
-                  {/* Logo title - clickable to the role's main dashboard */}
                   <h1 className="text-lg font-extrabold text-white tracking-tight">
                     <Link to={user?.role === USER_ROLES.SUPERVISOR ? '/supervisor' : '/admin'} className="hover:underline">AutoMech</Link>
                   </h1>

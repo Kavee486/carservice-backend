@@ -10,7 +10,7 @@ import {
   EyeOutlined, EditOutlined, DeleteOutlined, UserOutlined,
   TeamOutlined, CheckCircleOutlined, CloseCircleOutlined,
   ExclamationCircleOutlined, PhoneOutlined, MailOutlined,
-  EnvironmentOutlined, RocketOutlined, CheckOutlined
+  EnvironmentOutlined, CheckOutlined, SortAscendingOutlined
 } from '@ant-design/icons';
 import { getAllCustomers, deleteCustomer, activateCustomer, addCustomer } from '../actions/customerActions';
 import { previousService } from '../services/previousService';
@@ -38,6 +38,7 @@ const Customers = () => {
   const [prevServicesLoading, setPrevServicesLoading] = useState(false);
   const [prevServicesList, setPrevServicesList] = useState([]);
   const [prevServicesCustomer, setPrevServicesCustomer] = useState(null);
+  const [sortOrder, setSortOrder] = useState('active-first'); // 'active-first', 'inactive-first', 'name-asc', 'name-desc'
 
   useEffect(() => {
     dispatch(getAllCustomers());
@@ -48,7 +49,7 @@ const Customers = () => {
     const statusValue = customer.C_Status;
     
     if (!statusValue) {
-      return { text: 'Unknown', isActive: false, color: '#d9d9d9', bgColor: '#fafafa', icon: <ExclamationCircleOutlined /> };
+      return { text: 'Unknown', isActive: false, color: 'default', icon: <ExclamationCircleOutlined /> };
     }
     
     const cleanStatus = String(statusValue).trim();
@@ -57,8 +58,7 @@ const Customers = () => {
       return { 
         text: 'ACTIVE', 
         isActive: true, 
-        color: '#52c41a', 
-        bgColor: '#f6ffed', 
+        color: 'blue', 
         icon: <CheckCircleOutlined /> 
       };
     }
@@ -67,8 +67,7 @@ const Customers = () => {
       return { 
         text: 'INACTIVE', 
         isActive: false, 
-        color: '#ff4d4f', 
-        bgColor: '#fff2f0', 
+        color: 'default', 
         icon: <CloseCircleOutlined /> 
       };
     }
@@ -76,27 +75,77 @@ const Customers = () => {
     return { 
       text: cleanStatus.toUpperCase() || 'UNKNOWN', 
       isActive: false, 
-      color: '#d9d9d9', 
-      bgColor: '#fafafa', 
+      color: 'default', 
       icon: <ExclamationCircleOutlined /> 
     };
   };
 
-  // Filter customers
-  const filteredCustomers = customers && customers.length > 0 
-    ? customers.filter(customer => {
-        const statusDetails = getStatusDetails(customer);
-        const matchesSearch = 
-          customer.C_FullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          customer.C_Email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          customer.C_Phone?.includes(searchTerm) ||
-          customer.C_Address?.toLowerCase().includes(searchTerm.toLowerCase());
+  // Sort customers with active first by default
+  const sortCustomers = (customersList) => {
+    if (!customersList || customersList.length === 0) return [];
+    
+    const sortedCustomers = [...customersList];
+    
+    switch (sortOrder) {
+      case 'active-first':
+        return sortedCustomers.sort((a, b) => {
+          const aStatus = getStatusDetails(a).isActive;
+          const bStatus = getStatusDetails(b).isActive;
+          
+          if (aStatus && !bStatus) return -1;
+          if (!aStatus && bStatus) return 1;
+          return (a.C_FullName || '').localeCompare(b.C_FullName || '');
+        });
         
-        if (statusFilter === 'all') return matchesSearch;
-        if (statusFilter === 'active') return statusDetails.isActive && matchesSearch;
-        if (statusFilter === 'inactive') return !statusDetails.isActive && matchesSearch;
-        return matchesSearch;
-      })
+      case 'inactive-first':
+        return sortedCustomers.sort((a, b) => {
+          const aStatus = getStatusDetails(a).isActive;
+          const bStatus = getStatusDetails(b).isActive;
+          
+          if (!aStatus && bStatus) return -1;
+          if (aStatus && !bStatus) return 1;
+          return (a.C_FullName || '').localeCompare(b.C_FullName || '');
+        });
+        
+      case 'name-asc':
+        return sortedCustomers.sort((a, b) => 
+          (a.C_FullName || '').localeCompare(b.C_FullName || '')
+        );
+        
+      case 'name-desc':
+        return sortedCustomers.sort((a, b) => 
+          (b.C_FullName || '').localeCompare(a.C_FullName || '')
+        );
+        
+      default:
+        return sortedCustomers.sort((a, b) => {
+          const aStatus = getStatusDetails(a).isActive;
+          const bStatus = getStatusDetails(b).isActive;
+          
+          if (aStatus && !bStatus) return -1;
+          if (!aStatus && bStatus) return 1;
+          return (a.C_FullName || '').localeCompare(b.C_FullName || '');
+        });
+    }
+  };
+
+  // Filter and sort customers
+  const filteredCustomers = customers && customers.length > 0 
+    ? sortCustomers(
+        customers.filter(customer => {
+          const statusDetails = getStatusDetails(customer);
+          const matchesSearch = 
+            customer.C_FullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            customer.C_Email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            customer.C_Phone?.includes(searchTerm) ||
+            customer.C_Address?.toLowerCase().includes(searchTerm.toLowerCase());
+          
+          if (statusFilter === 'all') return matchesSearch;
+          if (statusFilter === 'active') return statusDetails.isActive && matchesSearch;
+          if (statusFilter === 'inactive') return !statusDetails.isActive && matchesSearch;
+          return matchesSearch;
+        })
+      )
     : [];
 
   // Count customers by status
@@ -249,6 +298,16 @@ const Customers = () => {
     return phone;
   };
 
+  const getSortOrderLabel = () => {
+    switch (sortOrder) {
+      case 'active-first': return 'Active First';
+      case 'inactive-first': return 'Inactive First';
+      case 'name-asc': return 'Name A-Z';
+      case 'name-desc': return 'Name Z-A';
+      default: return 'Active First';
+    }
+  };
+
   const StatCard = ({ title, value, icon, color, progress }) => (
     <Card 
       className="stat-card h-full border-0 shadow-sm hover:shadow-md transition-all duration-300"
@@ -289,11 +348,6 @@ const Customers = () => {
       >
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center space-x-3">
-            <Avatar 
-              size="large" 
-              icon={<UserOutlined />} 
-              className="bg-blue-100 text-blue-600"
-            />
             <div>
               <Text strong className="text-lg font-semibold text-gray-900 block">
                 {record.C_FullName || 'Unknown Customer'}
@@ -305,9 +359,6 @@ const Customers = () => {
             color={statusDetails.color} 
             icon={statusDetails.icon}
             style={{ 
-              backgroundColor: statusDetails.bgColor, 
-              borderColor: statusDetails.color,
-              color: statusDetails.color,
               borderRadius: '12px',
               fontWeight: '600'
             }}
@@ -372,9 +423,10 @@ const Customers = () => {
               <Button
                 type="text"
                 onClick={() => openPrevServices(record)}
-                icon={<RocketOutlined className="text-purple-600" />}
-                className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center"
-              />
+                className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center text-sm font-medium text-purple-600"
+              >
+                Services
+              </Button>
             </Tooltip>
           </div>
         </div>
@@ -413,10 +465,7 @@ const Customers = () => {
       dataIndex: 'C_CustomerID',
       key: 'C_CustomerID',
       render: (text) => (
-        <div className="flex items-center">
-          <Avatar size="small" icon={<UserOutlined />} className="bg-blue-100 text-blue-600 mr-2" />
-          <Text strong className="text-base font-semibold text-gray-900">{text}</Text>
-        </div>
+        <Text strong className="text-base font-semibold text-gray-900">{text}</Text>
       ),
       width: 120,
     },
@@ -461,9 +510,6 @@ const Customers = () => {
             color={statusDetails.color} 
             icon={statusDetails.icon}
             style={{ 
-              backgroundColor: statusDetails.bgColor, 
-              borderColor: statusDetails.color,
-              color: statusDetails.color,
               borderRadius: '12px',
               fontWeight: '600',
               border: 'none'
@@ -488,6 +534,12 @@ const Customers = () => {
             icon: <EyeOutlined className="text-blue-600" />,
             label: 'View Details',
             onClick: () => showDetails(record)
+          },
+          {
+            key: 'services',
+            icon: <TeamOutlined className="text-purple-600" />,
+            label: 'View Services',
+            onClick: () => openPrevServices(record)
           },
           {
             key: 'divider1',
@@ -527,15 +579,6 @@ const Customers = () => {
                 className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center"
               />
             </Dropdown>
-
-            <Tooltip title="View Previous Services">
-              <Button
-                type="text"
-                onClick={() => openPrevServices(record)}
-                icon={<RocketOutlined className="text-purple-600" />}
-                className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center"
-              />
-            </Tooltip>
           </div>
         );
       },
@@ -649,6 +692,44 @@ const Customers = () => {
                 <FilterOutlined className="text-blue-600 text-base mr-2" />
                 <Text strong className="text-base text-gray-900">Filters & Search</Text>
               </div>
+              
+              {/* Sort Dropdown */}
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'active-first',
+                      label: 'Active First',
+                      icon: <CheckCircleOutlined className="text-green-600" />,
+                    },
+                    {
+                      key: 'inactive-first',
+                      label: 'Inactive First',
+                      icon: <CloseCircleOutlined className="text-red-600" />,
+                    },
+                    {
+                      key: 'name-asc',
+                      label: 'Name A-Z',
+                      icon: <SortAscendingOutlined className="text-blue-600" />,
+                    },
+                    {
+                      key: 'name-desc',
+                      label: 'Name Z-A',
+                      icon: <SortAscendingOutlined className="text-blue-600" style={{ transform: 'rotate(180deg)' }} />,
+                    },
+                  ],
+                  onClick: ({ key }) => setSortOrder(key),
+                  selectedKeys: [sortOrder],
+                }}
+                trigger={['click']}
+              >
+                <Button 
+                  icon={<SortAscendingOutlined />}
+                  className="border-gray-300 rounded-lg h-8 font-medium flex items-center"
+                >
+                  {getSortOrderLabel()}
+                </Button>
+              </Dropdown>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -702,9 +783,12 @@ const Customers = () => {
               </div>
             </div>
             
-            <div className="mt-2">
+            <div className="mt-2 flex justify-between items-center">
               <Text className="text-xs font-medium text-gray-600">
                 Showing {filteredCustomers.length} of {customerCounts.total} customers
+              </Text>
+              <Text className="text-xs font-medium text-blue-600">
+                Sorted by: {getSortOrderLabel()}
               </Text>
             </div>
           </Card>
@@ -717,7 +801,15 @@ const Customers = () => {
           title={
             <div className="flex items-center justify-between">
               <Text strong className="text-xl text-gray-900">Customer List</Text>
-              <Text className="text-gray-500">{customerCounts.total} customers found</Text>
+              <div className="flex items-center gap-2">
+                <Text className="text-gray-500">{customerCounts.total} customers found</Text>
+                <Badge 
+                  count={customerCounts.active} 
+                  style={{ backgroundColor: '#52c41a' }} 
+                  showZero 
+                />
+                <Text className="text-xs text-gray-400">active</Text>
+              </div>
             </div>
           }
           extra={
@@ -766,7 +858,7 @@ const Customers = () => {
               scroll={{ x: 1000 }}
               className="rounded-lg custom-table"
               size="middle"
-              rowClassName="hover:bg-blue-50 transition-colors duration-200"
+              rowClassName="hover:bg-gray-50 transition-colors duration-200"
               locale={{
                 emptyText: (
                   <div className="py-16 text-center">

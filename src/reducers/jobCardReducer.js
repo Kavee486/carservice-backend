@@ -11,7 +11,10 @@ import {
   UpdateJobCard_FAIL,
   DeleteJobCard_REQUEST,
   DeleteJobCard_SUCCESS,
-  DeleteJobCard_FAIL
+  DeleteJobCard_FAIL,
+  GetAllTechnicians_REQUEST,
+  GetAllTechnicians_SUCCESS,
+  GetAllTechnicians_FAIL
 } from '../constants/JobCardConstants';
 
 export const jobCardListReducer = (state = { jobCards: [] }, action) => {
@@ -58,6 +61,20 @@ export const jobCardListReducer = (state = { jobCards: [] }, action) => {
     case DeleteJobCard_FAIL:
       return { ...state, loading: false, error: action.payload };
 
+    default:
+      return state;
+  }
+};
+
+
+export const technicianListReducer = (state = { technicians: [] }, action) => {
+  switch (action.type) {
+    case GetAllTechnicians_REQUEST:
+      return { loading: true, technicians: [] };
+    case GetAllTechnicians_SUCCESS:
+      return { loading: false, technicians: action.payload };
+    case GetAllTechnicians_FAIL:
+      return { loading: false, error: action.payload };
     default:
       return state;
   }

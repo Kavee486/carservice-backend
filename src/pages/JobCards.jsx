@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/authServices';
 import { useSelector, useDispatch } from 'react-redux';
-import { ClipboardList, Plus, Search, Filter, Edit3, Trash2, RefreshCw, Calendar, User, Tag, AlertCircle, Package } from 'lucide-react';
-import { GetAllJobCards, AddJobCard, UpdateJobCard, DeleteJobCard } from '../actions/jobCardActions';
+import { ClipboardList, Plus, Search, Filter, Edit3, RefreshCw, Calendar, User, Tag, AlertCircle, Package, ChevronRight } from 'lucide-react';
+import { GetAllJobCards, AddJobCard, UpdateJobCard, GetAllTechnicians } from '../actions/jobCardActions';
 import { GetAllJobCardItems } from '../actions/jobCardItemActions';
 import { fetchAllParts, fetchAllServices } from '../services/jobCardItemServices';
 import { updateBookingServices, updateBookingService, addBookingParts, getBookingPartsByBookingID, getBookingServicesWithParts, addJobCard as addJobCardService } from '../services/jobCardServices';
@@ -14,14 +14,19 @@ const JobCards = () => {
   const dispatch = useDispatch();
   const jobCardList = useSelector(state => state.jobCardList);
   const { loading, jobCards, error } = jobCardList;
+  
+  const technicianList = useSelector(state => state.technicianList);
+  const { loading: techniciansLoading, technicians, error: techniciansError } = technicianList;
+  
   const jobCardItemList = useSelector(state => state.jobCardItemList);
   const { jobCardItems = [] } = jobCardItemList || {};
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [currentJobCard, setCurrentJobCard] = useState(null);
+  const [selectedJobCard, setSelectedJobCard] = useState(null);
+  const [isDetailView, setIsDetailView] = useState(false);
     // prepare a place to store invoice object built from modal selections
     let invoiceObjBuilt = null;
-  const [deleteLoading, setDeleteLoading] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [parts, setParts] = useState([]);
@@ -31,6 +36,7 @@ const JobCards = () => {
   const [servicesList, setServicesList] = useState([]);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [servicesError, setServicesError] = useState(null);
+  const [selectedTechnician, setSelectedTechnician] = useState(''); // Store technician name directly
 
   // Modal selections
   const [selectedServices, setSelectedServices] = useState([]); // array of S_ServiceID
@@ -43,6 +49,9 @@ const JobCards = () => {
   // local cache for totals (Quantity/Price/Status) keyed by J_BookingID to reflect
   // newly-sent totals immediately in the UI when backend takes time to reflect them
   const [totalsMap, setTotalsMap] = useState({}); // bookingId -> { Quantity, Price, J_JobCardStatus }
+
+  // Parts validation state
+  const [partsValidationErrors, setPartsValidationErrors] = useState({}); // { serviceKey_index: errorMessage }
 
   const navigate = useNavigate();
 
@@ -65,6 +74,7 @@ const JobCards = () => {
 
   useEffect(() => {
     dispatch(GetAllJobCards());
+    dispatch(GetAllTechnicians()); // Fetch technicians
     // Load job card items so we can show parts/qty/price per job card
     dispatch(GetAllJobCardItems());
     fetchParts();
@@ -134,6 +144,47 @@ const JobCards = () => {
     }
   };
 
+  // Validate parts against inventory
+  const validateParts = () => {
+    const errors = {};
+    let isValid = true;
+
+    // Iterate through all parts in all service groups
+    Object.keys(selectedPartsByService).forEach(serviceKey => {
+      const rows = selectedPartsByService[serviceKey] || [];
+      
+      rows.forEach((row, index) => {
+        // Skip validation for empty rows
+        if (!row.partId) {
+          return;
+        }
+
+        const partInInventory = parts.find(p => String(p.P_PartID) === String(row.partId));
+        const errorKey = `${serviceKey}_${index}`;
+        
+        if (!partInInventory) {
+          errors[errorKey] = 'This part is not available in inventory';
+          isValid = false;
+        } else {
+          // Check if quantity exceeds available stock
+          const availableStock = parseInt(partInInventory.P_StockQty || 0, 10);
+          const requestedQty = parseInt(row.qty || 0, 10);
+          
+          if (requestedQty > availableStock) {
+            errors[errorKey] = `Only ${availableStock} units available in stock`;
+            isValid = false;
+          } else if (requestedQty <= 0) {
+            errors[errorKey] = 'Quantity must be greater than 0';
+            isValid = false;
+          }
+        }
+      });
+    });
+
+    setPartsValidationErrors(errors);
+    return isValid;
+  };
+
   const handleAddJobCard = () => {
     setCurrentJobCard(null);
     // reset selections
@@ -141,6 +192,8 @@ const JobCards = () => {
     setSelectedPartsByService({});
     setSelectedPartsRows([]);
     setLaborCost(0);
+    setSelectedTechnician('');
+    setPartsValidationErrors({}); // Clear validation errors
     setIsModalVisible(true);
   };
 
@@ -167,6 +220,9 @@ const JobCards = () => {
 
   const handleEditJobCard = (jobCard) => {
     setCurrentJobCard(jobCard);
+    // Set the selected technician name directly from the job card (now contains full name from backend)
+    setSelectedTechnician(jobCard.J_Technician || '');
+    
     // initialize modal selections from existing booking-specific parts if available
     const bookingIdKey = String(jobCard.J_BookingID || '');
     // Try to fetch structured services-with-parts first so we can populate groups by service
@@ -284,37 +340,29 @@ const JobCards = () => {
       } catch (e) {
         setLaborCost(0);
       }
+      
+    setPartsValidationErrors({}); // Clear validation errors
   };
 
-  const handleDeleteJobCard = async (jobCard) => {
-    if (!window.confirm('Are you sure you want to delete this job card?')) {
-      return;
-    }
+  const handleViewJobCard = (jobCard) => {
+    setSelectedJobCard(jobCard);
+    setIsDetailView(true);
+  };
 
-    try {
-      setDeleteLoading(prev => ({ ...prev, [jobCard.J_JobCardID]: true }));
-
-      const jobCardData = {
-        J_JobCardID: jobCard.J_JobCardID,
-        J_BookingID: jobCard.J_BookingID,
-        J_CreatedDate: jobCard.J_CreatedDate,
-        J_Technician: jobCard.J_Technician,
-        J_JobCardStatus: jobCard.J_JobCardStatus,
-        Status: 'I'
-      };
-
-      await dispatch(DeleteJobCard(jobCardData));
-      alert('Job card deleted successfully');
-      dispatch(GetAllJobCards());
-    } catch (error) {
-      alert('Failed to delete job card');
-    } finally {
-      setDeleteLoading(prev => ({ ...prev, [jobCard.J_JobCardID]: false }));
-    }
+  const handleBackToList = () => {
+    setIsDetailView(false);
+    setSelectedJobCard(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate parts before submission
+    if (!validateParts()) {
+      alert('Please fix the parts validation errors before submitting.');
+      return;
+    }
+
     const formData = new FormData(e.target);
     const values = Object.fromEntries(formData.entries());
 
@@ -329,7 +377,7 @@ const JobCards = () => {
       const jobCardData = {
         J_BookingID: values.bookingId,
         J_CreatedDate: dayjs(values.createdDate).format('YYYY-MM-DD'),
-        J_Technician: values.technician,
+        J_Technician: selectedTechnician, // Store technician name directly
         J_JobCardStatus: values.jobCardStatus,
         LaborCost: parseFloat(values.laborCost || laborCost || 0) || 0,
         // include selected services and parts arrays (backend may accept or be wired later)
@@ -477,7 +525,7 @@ const JobCards = () => {
           const payload = {
             J_BookingID: String(bookingId),
             J_CreatedDate: jobCardData.J_CreatedDate,
-            J_Technician: jobCardData.J_Technician,
+            J_Technician: jobCardData.J_Technician, // Store technician name
             J_JobCardStatus: jobCardData.J_JobCardStatus,
               Quantity: partsQty,
               Price: parseFloat(grandTotal.toFixed(2)),
@@ -722,6 +770,7 @@ const JobCards = () => {
 
   const handleRefresh = () => {
     dispatch(GetAllJobCards());
+    dispatch(GetAllTechnicians()); // Refresh technicians too
     dispatch(GetAllJobCardItems());
     fetchParts();
   };
@@ -762,6 +811,16 @@ const JobCards = () => {
       syncFlattenToState(copy);
       return copy;
     });
+    
+    // Clear validation error when part is changed
+    const errorKey = `${serviceKey}_${idx}`;
+    if (partsValidationErrors[errorKey]) {
+      setPartsValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[errorKey];
+        return newErrors;
+      });
+    }
   };
 
   const removePartRowFromService = (serviceKey, idx) => {
@@ -774,6 +833,35 @@ const JobCards = () => {
       syncFlattenToState(copy);
       return copy;
     });
+    
+    // Clear validation error when row is removed
+    const errorKey = `${serviceKey}_${idx}`;
+    if (partsValidationErrors[errorKey]) {
+      setPartsValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[errorKey];
+        return newErrors;
+      });
+    }
+  };
+
+  // Handle technician selection change - now using names directly
+  const handleTechnicianChange = (technicianName) => {
+    setSelectedTechnician(technicianName);
+  };
+
+  // Get unique technician names from technicians list
+  const getTechnicianNames = () => {
+    if (!Array.isArray(technicians)) return [];
+    
+    const uniqueNames = new Set();
+    technicians
+      .filter(tech => tech.Status === 'A') // Only active technicians
+      .forEach(tech => {
+        if (tech.FullName) uniqueNames.add(tech.FullName);
+      });
+    
+    return Array.from(uniqueNames).sort();
   };
 
   // Deduplicate jobCards by J_BookingID so that when backend returns both an "add" row
@@ -809,9 +897,20 @@ const JobCards = () => {
     return Array.from(map.values());
   })();
 
+  // Sort job cards in descending order by J_JobCardID
+  const sortedJobCards = (() => {
+    if (!Array.isArray(dedupedJobCards) || dedupedJobCards.length === 0) return [];
+    
+    return [...dedupedJobCards].sort((a, b) => {
+      const idA = parseInt(a.J_JobCardID || 0, 10);
+      const idB = parseInt(b.J_JobCardID || 0, 10);
+      return idB - idA; // Descending order (newest first)
+    });
+  })();
+
   // Filter job cards based on search term
-  const filteredJobCards = dedupedJobCards && dedupedJobCards.length > 0
-    ? dedupedJobCards.filter(jobCard => {
+  const filteredJobCards = sortedJobCards && sortedJobCards.length > 0
+    ? sortedJobCards.filter(jobCard => {
       const term = searchTerm.toLowerCase();
       const bookingId = String(jobCard.J_BookingID || '').toLowerCase();
       const technician = String(jobCard.J_Technician || '').toLowerCase();
@@ -914,6 +1013,189 @@ const JobCards = () => {
     );
   }
 
+  // Job Card Detail View
+  if (isDetailView && selectedJobCard) {
+    const jobCard = selectedJobCard;
+    const bookingParts = bookingPartsMap[jobCard.J_BookingID] || [];
+    const itemsForCard = Array.isArray(jobCardItems) ? jobCardItems.filter(it => String(it.J_JobCardID) === String(jobCard.J_JobCardID)) : [];
+    
+    // Calculate totals
+    const totalsOverride = totalsMap[String(jobCard.J_BookingID || jobCard.J_JobCardID || '')];
+    const hasBackendTotals = totalsOverride || (jobCard.Quantity !== undefined && jobCard.Quantity !== null && String(jobCard.Quantity).trim() !== '') || (jobCard.Price !== undefined && jobCard.Price !== null && String(jobCard.Price).trim() !== '');
+    const overrideQtyVal = totalsOverride?.Quantity ?? ((jobCard.Quantity !== undefined && jobCard.Quantity !== null && String(jobCard.Quantity).trim() !== '') ? (parseInt(jobCard.Quantity, 10) || 0) : null);
+    const overridePriceVal = totalsOverride?.Price ?? ((jobCard.Price !== undefined && jobCard.Price !== null && String(jobCard.Price).trim() !== '') ? (parseFloat(jobCard.Price) || 0) : null);
+    
+    // Aggregate parts
+    const agg = {};
+    if (Array.isArray(bookingParts) && bookingParts.length > 0) {
+      for (const bp of bookingParts) {
+        const pid = String(bp.PartID || bp.P_PartID || bp.PartId || bp.PARTID || '') || '';
+        if (!pid) continue;
+        const name = bp.PartName || bp.P_PartName || getPartName(pid);
+        const qty = parseInt(bp.Quantity || bp.Qty || 0, 10) || 0;
+        const unit = parseFloat(bp.UnitPrice || bp.P_UnitPrice || bp.P_UnitPrice || 0) || 0;
+        const total = parseFloat(bp.TotalPrice || (unit * qty) || 0) || 0;
+
+        if (!agg[pid]) {
+          agg[pid] = { partId: pid, name, qty: 0, unit, totalPrice: 0 };
+        }
+        agg[pid].qty += qty;
+        agg[pid].totalPrice += total || (unit * qty);
+        if (!agg[pid].unit && unit) agg[pid].unit = unit;
+      }
+    }
+
+    const uniqueParts = Object.values(agg);
+    const totalQty = uniqueParts.reduce((s, p) => s + (p.qty || 0), 0);
+    const totalPrice = uniqueParts.reduce((s, p) => s + (parseFloat(p.totalPrice || 0) || 0), 0);
+    const displayQty = overrideQtyVal !== null ? overrideQtyVal : totalQty;
+    const displayPrice = overridePriceVal !== null ? overridePriceVal : totalPrice;
+
+    return (
+      <div className="h-full p-4 md:p-6">
+        <div className="w-full space-y-6">
+          {/* Header Section */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl shadow-lg text-white p-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleBackToList}
+                  className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-0 rounded-lg h-10 px-4 font-medium backdrop-blur-sm flex items-center"
+                >
+                  <ChevronRight className="h-4 w-4 mr-2 rotate-180" />
+                  Back to List
+                </button>
+                <div>
+                  <h1 className="text-2xl font-bold text-white mb-2">Job Card Details</h1>
+                  <p className="text-blue-100">JC-{String(jobCard.J_JobCardID).padStart(4, '0')} • Booking: {jobCard.J_BookingID}</p>
+                </div>
+              </div>
+    
+            </div>
+          </div>
+
+          {/* Job Card Details */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Basic Information */}
+            <div className="lg:col-span-1 space-y-6">
+              <div className="bg-white rounded-2xl shadow-lg border-0 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <User className="h-5 w-5 text-blue-600" />
+                  Basic Information
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Job Card ID</label>
+                    <p className="text-base font-semibold text-gray-900">JC-{String(jobCard.J_JobCardID).padStart(4, '0')}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Booking ID</label>
+                    <p className="text-base font-semibold text-gray-900">{jobCard.J_BookingID}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Created Date</label>
+                    <p className="text-base text-gray-900">{new Date(jobCard.J_CreatedDate).toLocaleDateString()}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Technician</label>
+                    <p className="text-base text-gray-900">{jobCard.J_Technician}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Status</label>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                      jobCard.J_JobCardStatus === 'Completed'
+                        ? 'bg-green-100 text-green-800'
+                        : jobCard.J_JobCardStatus === 'In Progress'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {jobCard.J_JobCardStatus}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="bg-white rounded-2xl shadow-lg border-0 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Tag className="h-5 w-5 text-green-600" />
+                  Summary
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Total Parts Quantity</span>
+                    <span className="text-lg font-semibold text-blue-600">{displayQty}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Total Price</span>
+                    <span className="text-lg font-semibold text-green-600">{formatCurrency(displayPrice)}</span>
+                  </div>
+                  {jobCard.LaborCost && parseFloat(jobCard.LaborCost) > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Labor Cost</span>
+                      <span className="text-lg font-semibold text-orange-600">{formatCurrency(jobCard.LaborCost)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Services and Parts */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Services */}
+              <div className="bg-white rounded-2xl shadow-lg border-0 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <ClipboardList className="h-5 w-5 text-blue-600" />
+                  Services
+                </h3>
+                <div className="space-y-3">
+                  {(String(jobCard.ServiceNames || '')
+                    .split(',')
+                    .map(s => s.trim())
+                    .filter(Boolean)
+                  ).map((service, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <span className="text-base font-medium text-gray-800">{service}</span>
+                      <span className="text-sm text-gray-600">Service</span>
+                    </div>
+                  ))}
+                  {(!jobCard.ServiceNames || String(jobCard.ServiceNames).trim() === '') && (
+                    <p className="text-gray-500 text-center py-4">No services assigned</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Parts */}
+              <div className="bg-white rounded-2xl shadow-lg border-0 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Package className="h-5 w-5 text-green-600" />
+                  Parts Used
+                </h3>
+                <div className="space-y-3">
+                  {uniqueParts.length > 0 ? (
+                    uniqueParts.map((part, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="text-base font-medium text-gray-800">{part.name}</p>
+                          <p className="text-sm text-gray-600">Quantity: {part.qty} × {formatCurrency(part.unit)}</p>
+                        </div>
+                        <span className="text-base font-semibold text-green-600">
+                          {formatCurrency(part.totalPrice)}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">No parts used</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full p-4 md:p-6">
       <div className="w-full space-y-6">
@@ -977,7 +1259,7 @@ const JobCards = () => {
           </div>
         </div>
 
-        Statistics Cards
+        {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <StatCard
             title="Total Job Cards"
@@ -1043,7 +1325,7 @@ const JobCards = () => {
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-semibold text-gray-900">Job Cards List</h3>
-              {/* <span className="text-gray-500">{jobCardStats.totalJobCards} job cards found</span> */}
+              <span className="text-gray-500 text-sm">Sorted by newest first</span>
             </div>
           </div>
 
@@ -1067,7 +1349,11 @@ const JobCards = () => {
                   </thead>
                   <tbody>
                     {filteredJobCards.map((jobCard) => (
-                      <tr key={jobCard.J_JobCardID} className="border-b border-gray-200 hover:bg-blue-50 transition-colors duration-200">
+                      <tr 
+                        key={jobCard.J_JobCardID} 
+                        className="border-b border-gray-200 hover:bg-blue-50 transition-colors duration-200 cursor-pointer"
+                        onClick={() => handleViewJobCard(jobCard)}
+                      >
                         <td className="py-4 px-4 text-base font-medium text-gray-900">
                           <div className="font-medium">JC-{String(jobCard.J_JobCardID).padStart(4, '0')}</div>
                           <div className="text-xs text-gray-400">Booking: {jobCard.J_BookingID}</div>
@@ -1258,26 +1544,14 @@ const JobCards = () => {
                         <td className="py-4 px-4">
                           <div className="flex items-center space-x-2">
                             <button
-                              onClick={() => handleEditJobCard(jobCard)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditJobCard(jobCard);
+                              }}
                               className="text-blue-600 hover:text-blue-800 p-2 rounded-lg hover:bg-blue-100 transition-colors"
                               title="Edit job card"
                             >
                               <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteJobCard(jobCard)}
-                              className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-100 transition-colors"
-                              title="Delete job card"
-                              disabled={deleteLoading[jobCard.J_JobCardID]}
-                            >
-                              {deleteLoading[jobCard.J_JobCardID] ? (
-                                <svg className="animate-spin h-4 w-4 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
                             </button>
                           </div>
                         </td>
@@ -1318,22 +1592,9 @@ const JobCards = () => {
       </h3>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Technician Input */}
-        <div className="md:col-span-2">
-          <label className="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
-            Technician
-          </label>
-          <input
-            name="technician"
-            type="text"
-            placeholder="Enter technician name"
-            defaultValue={currentJobCard?.J_Technician}
-            required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 bg-white"
-          />
-        </div>
+        {/* Technician selection removed for admin UI */}
 
-        Job Card Status 
+        {/* Job Card Status */}
         <div className="md:col-span-2">
           <label className="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
             Job Card Status
@@ -1348,7 +1609,7 @@ const JobCards = () => {
             <option value="In Progress">In Progress</option>
             <option value="Completed">Completed</option>
           </select>
-        </div> 
+        </div>
 
         {/* Services Section */}
         <div className="mt-4 border border-gray-200 bg-white/80 rounded-xl shadow-inner p-5 hover:shadow-md transition">
@@ -1460,57 +1721,90 @@ const JobCards = () => {
                   </div>
                   <div className="space-y-2">
                     {rows.length === 0 && <div className="text-sm text-gray-500">No parts added for this service.</div>}
-                    {rows.map((row, idx) => (
-                      <div key={idx} className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 bg-white">
-                        <Package className="text-green-500 h-5 w-5" />
-                        <div className="flex-1 grid grid-cols-12 gap-2 items-center">
-                          <div className="col-span-6">
-                            <select
-                              value={row.partId}
-                              onChange={(e) => {
-                                const partId = e.target.value;
-                                const part = parts.find(p => String(p.P_PartID) === String(partId));
-                                const unit = part ? parseFloat(part.P_UnitPrice || 0) : 0;
-                                updatePartRowInService(key, idx, { partId, unitPrice: unit });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white focus:ring-1 focus:ring-green-400"
-                            >
-                              <option value="">Select part</option>
-                              {Array.isArray(parts) && parts.map(p => (
-                                <option key={p.P_PartID} value={p.P_PartID}>{p.P_PartName} — Rs {parseFloat(p.P_UnitPrice || 0).toFixed(2)}</option>
-                              ))}
-                            </select>
+                    {rows.map((row, idx) => {
+                      const errorKey = `${key}_${idx}`;
+                      const errorMessage = partsValidationErrors[errorKey];
+                      const partInInventory = parts.find(p => String(p.P_PartID) === String(row.partId));
+                      const availableStock = partInInventory ? parseInt(partInInventory.P_StockQty || 0, 10) : 0;
+
+                      return (
+                        <div key={idx} className={`flex items-center gap-3 p-2 rounded-lg border transition-all duration-150 ${
+                          errorMessage 
+                            ? 'border-red-300 bg-red-50' 
+                            : 'border-gray-100 bg-white'
+                        }`}>
+                          <Package className={`h-5 w-5 ${errorMessage ? 'text-red-500' : 'text-green-500'}`} />
+                          <div className="flex-1 grid grid-cols-12 gap-2 items-center">
+                            <div className="col-span-6">
+                              <select
+                                value={row.partId}
+                                onChange={(e) => {
+                                  const partId = e.target.value;
+                                  const part = parts.find(p => String(p.P_PartID) === String(partId));
+                                  const unit = part ? parseFloat(part.P_UnitPrice || 0) : 0;
+                                  updatePartRowInService(key, idx, { partId, unitPrice: unit });
+                                }}
+                                className={`w-full px-3 py-2 border rounded-md text-sm bg-white focus:ring-1 ${
+                                  errorMessage 
+                                    ? 'border-red-300 focus:ring-red-400' 
+                                    : 'border-gray-200 focus:ring-green-400'
+                                }`}
+                              >
+                                <option value="">Select part</option>
+                                {Array.isArray(parts) && parts.map(p => (
+                                  <option key={p.P_PartID} value={p.P_PartID}>
+                                    {p.P_PartName} — Rs {parseFloat(p.P_UnitPrice || 0).toFixed(2)} 
+                                    {p.P_StockQty && ` (Stock: ${p.P_StockQty})`}
+                                  </option>
+                                ))}
+                              </select>
+                              {errorMessage && (
+                                <div className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                                  <AlertCircle className="h-3 w-3" />
+                                  {errorMessage}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="col-span-2">
+                              <input
+                                type="number"
+                                min="1"
+                                value={row.qty}
+                                onChange={(e) => {
+                                  const q = parseInt(e.target.value || 0, 10) || 0;
+                                  updatePartRowInService(key, idx, { qty: q });
+                                }}
+                                className={`w-full px-3 py-2 border rounded-md text-sm focus:ring-1 ${
+                                  errorMessage 
+                                    ? 'border-red-300 focus:ring-red-400' 
+                                    : 'border-gray-200 focus:ring-green-400'
+                                }`}
+                              />
+                            </div>
+
+                            <div className="col-span-3 text-sm">
+                              <div className="text-xs text-gray-500">Unit</div>
+                              <div className="font-medium">{row.unitPrice ? `Rs ${parseFloat(row.unitPrice).toFixed(2)}` : '-'}</div>
+                              {partInInventory && (
+                                <div className="text-xs text-gray-500">
+                                  Stock: {availableStock}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="col-span-1 text-right">
+                              <div className="text-xs text-gray-500">Line</div>
+                              <div className="font-medium">{row.unitPrice ? `Rs ${(parseFloat(row.unitPrice || 0) * (parseInt(row.qty || 0) || 0)).toFixed(2)}` : 'Rs 0.00'}</div>
+                            </div>
                           </div>
 
-                          <div className="col-span-2">
-                            <input
-                              type="number"
-                              min="1"
-                              value={row.qty}
-                              onChange={(e) => {
-                                const q = parseInt(e.target.value || 0, 10) || 0;
-                                updatePartRowInService(key, idx, { qty: q });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:ring-1 focus:ring-green-400"
-                            />
-                          </div>
-
-                          <div className="col-span-3 text-sm">
-                            <div className="text-xs text-gray-500">Unit</div>
-                            <div className="font-medium">{row.unitPrice ? `Rs ${parseFloat(row.unitPrice).toFixed(2)}` : '-'}</div>
-                          </div>
-
-                          <div className="col-span-1 text-right">
-                            <div className="text-xs text-gray-500">Line</div>
-                            <div className="font-medium">{row.unitPrice ? `Rs ${(parseFloat(row.unitPrice || 0) * (parseInt(row.qty || 0) || 0)).toFixed(2)}` : 'Rs 0.00'}</div>
+                          <div className="w-12 text-right">
+                            <button type="button" onClick={() => removePartRowFromService(key, idx)} className="text-red-500 px-2 py-1 rounded-md hover:bg-red-50">Remove</button>
                           </div>
                         </div>
-
-                        <div className="w-12 text-right">
-                          <button type="button" onClick={() => removePartRowFromService(key, idx)} className="text-red-500 px-2 py-1 rounded-md hover:bg-red-50">Remove</button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -1526,38 +1820,86 @@ const JobCards = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {selectedPartsByService.unassigned.map((row, idx) => (
-                    <div key={idx} className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 bg-white">
-                      <Package className="text-green-500 h-5 w-5" />
-                      <div className="flex-1 grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-6">
-                          <select value={row.partId} onChange={(e) => {
-                            const partId = e.target.value;
-                            const part = parts.find(p => String(p.P_PartID) === String(partId));
-                            const unit = part ? parseFloat(part.P_UnitPrice || 0) : 0;
-                            updatePartRowInService('unassigned', idx, { partId, unitPrice: unit });
-                          }} className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white focus:ring-1 focus:ring-green-400">
-                            <option value="">Select part</option>
-                            {Array.isArray(parts) && parts.map(p => (
-                              <option key={p.P_PartID} value={p.P_PartID}>{p.P_PartName} — Rs {parseFloat(p.P_UnitPrice || 0).toFixed(2)}</option>
-                            ))}
-                          </select>
+                  {selectedPartsByService.unassigned.map((row, idx) => {
+                    const errorKey = `unassigned_${idx}`;
+                    const errorMessage = partsValidationErrors[errorKey];
+                    const partInInventory = parts.find(p => String(p.P_PartID) === String(row.partId));
+                    const availableStock = partInInventory ? parseInt(partInInventory.P_StockQty || 0, 10) : 0;
+
+                    return (
+                      <div key={idx} className={`flex items-center gap-3 p-2 rounded-lg border transition-all duration-150 ${
+                        errorMessage 
+                          ? 'border-red-300 bg-red-50' 
+                          : 'border-gray-100 bg-white'
+                      }`}>
+                        <Package className={`h-5 w-5 ${errorMessage ? 'text-red-500' : 'text-green-500'}`} />
+                        <div className="flex-1 grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-6">
+                            <select 
+                              value={row.partId} 
+                              onChange={(e) => {
+                                const partId = e.target.value;
+                                const part = parts.find(p => String(p.P_PartID) === String(partId));
+                                const unit = part ? parseFloat(part.P_UnitPrice || 0) : 0;
+                                updatePartRowInService('unassigned', idx, { partId, unitPrice: unit });
+                              }} 
+                              className={`w-full px-3 py-2 border rounded-md text-sm bg-white focus:ring-1 ${
+                                errorMessage 
+                                  ? 'border-red-300 focus:ring-red-400' 
+                                  : 'border-gray-200 focus:ring-green-400'
+                              }`}
+                            >
+                              <option value="">Select part</option>
+                              {Array.isArray(parts) && parts.map(p => (
+                                <option key={p.P_PartID} value={p.P_PartID}>
+                                  {p.P_PartName} — Rs {parseFloat(p.P_UnitPrice || 0).toFixed(2)} 
+                                  {p.P_StockQty && ` (Stock: ${p.P_StockQty})`}
+                                </option>
+                              ))}
+                            </select>
+                            {errorMessage && (
+                              <div className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                {errorMessage}
+                              </div>
+                            )}
+                          </div>
+                          <div className="col-span-2">
+                            <input 
+                              type="number" 
+                              min="1" 
+                              value={row.qty} 
+                              onChange={(e) => { 
+                                const q = parseInt(e.target.value || 0, 10) || 0; 
+                                updatePartRowInService('unassigned', idx, { qty: q }); 
+                              }} 
+                              className={`w-full px-3 py-2 border rounded-md text-sm focus:ring-1 ${
+                                errorMessage 
+                                  ? 'border-red-300 focus:ring-red-400' 
+                                  : 'border-gray-200 focus:ring-green-400'
+                              }`}
+                            />
+                          </div>
+                          <div className="col-span-3 text-sm">
+                            <div className="text-xs text-gray-500">Unit</div>
+                            <div className="font-medium">{row.unitPrice ? `Rs ${parseFloat(row.unitPrice).toFixed(2)}` : '-'}</div>
+                            {partInInventory && (
+                              <div className="text-xs text-gray-500">
+                                Stock: {availableStock}
+                              </div>
+                            )}
+                          </div>
+                          <div className="col-span-1 text-right">
+                            <div className="text-xs text-gray-500">Line</div>
+                            <div className="font-medium">{row.unitPrice ? `Rs ${(parseFloat(row.unitPrice || 0) * (parseInt(row.qty || 0) || 0)).toFixed(2)}` : 'Rs 0.00'}</div>
+                          </div>
                         </div>
-                        <div className="col-span-2">
-                          <input type="number" min="1" value={row.qty} onChange={(e) => { const q = parseInt(e.target.value || 0, 10) || 0; updatePartRowInService('unassigned', idx, { qty: q }); }} className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:ring-1 focus:ring-green-400" />
-                        </div>
-                        <div className="col-span-3 text-sm">
-                          <div className="text-xs text-gray-500">Unit</div>
-                          <div className="font-medium">{row.unitPrice ? `Rs ${parseFloat(row.unitPrice).toFixed(2)}` : '-'}</div>
-                        </div>
-                        <div className="col-span-1 text-right">
-                          <div className="text-xs text-gray-500">Line</div>
-                          <div className="font-medium">{row.unitPrice ? `Rs ${(parseFloat(row.unitPrice || 0) * (parseInt(row.qty || 0) || 0)).toFixed(2)}` : 'Rs 0.00'}</div>
+                        <div className="w-12 text-right">
+                          <button type="button" onClick={() => removePartRowFromService('unassigned', idx)} className="text-red-500 px-2 py-1 rounded-md hover:bg-red-50">Remove</button>
                         </div>
                       </div>
-                      <div className="w-12 text-right"><button type="button" onClick={() => removePartRowFromService('unassigned', idx)} className="text-red-500 px-2 py-1 rounded-md hover:bg-red-50">Remove</button></div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

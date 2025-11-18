@@ -1,4 +1,4 @@
-// src/pages/UserManagement.jsx
+// src/pages/SupervisorUserManagement.jsx
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
@@ -13,12 +13,11 @@ import {
   ExclamationCircleOutlined, PhoneOutlined, MailOutlined,
   EnvironmentOutlined, CheckOutlined, IdcardOutlined,
   SecurityScanOutlined, UserAddOutlined, UserSwitchOutlined,
-  IdcardFilled
+  IdcardFilled, ToolOutlined
 } from '@ant-design/icons';
 import { 
   signupUserAction, 
   resetSignupAction, 
-  getAdminsAction, 
   getTechniciansAction,
   getAllTechniciansAction,
   updateUserAction,
@@ -33,7 +32,7 @@ const { Option } = Select;
 const { useBreakpoint } = Grid;
 const { TextArea } = Input;
 
-const UserManagement = () => {
+const SupervisorUserManagement = () => {
   const dispatch = useDispatch();
   const screens = useBreakpoint();
   
@@ -42,7 +41,6 @@ const UserManagement = () => {
     loading: signupLoading, 
     success: signupSuccess, 
     error: signupError,
-    admins,
     technicians,
     allTechnicians 
   } = userSignup;
@@ -58,21 +56,18 @@ const UserManagement = () => {
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState([]);
   const [addUserForm] = Form.useForm();
-  const [selectedRole, setSelectedRole] = useState('2');
-  const [userFilter, setUserFilter] = useState('all');
 
   useEffect(() => {
-    fetchAllUsers();
+    fetchTechnicians();
   }, [dispatch]);
 
   // Handle signup success
   useEffect(() => {
     if (signupSuccess) {
-      message.success('User added successfully!');
+      message.success('Technician added successfully!');
       addUserForm.resetFields();
       setIsAddModalVisible(false);
-      setSelectedRole('2');
-      fetchAllUsers();
+      fetchTechnicians();
       dispatch(resetSignupAction());
     }
   }, [signupSuccess, dispatch, addUserForm]);
@@ -85,9 +80,8 @@ const UserManagement = () => {
     }
   }, [signupError, dispatch]);
 
-  const fetchAllUsers = () => {
-    dispatch(fetchAllUsersAction());
-    // Also fetch all technicians separately to get NIC data
+  const fetchTechnicians = () => {
+    dispatch(getTechniciansAction());
     dispatch(getAllTechniciansAction());
   };
 
@@ -132,7 +126,7 @@ const UserManagement = () => {
 
   // Enhanced function to find matching technician record for a user and get NIC
   const findMatchingTechnician = (user) => {
-    if (!allTechnicians?.data?.ResultSet || (user.RoleID !== '3' && user.RoleID !== 3)) return null;
+    if (!allTechnicians?.data?.ResultSet) return null;
     
     // Try multiple matching strategies
     return allTechnicians.data.ResultSet.find(tech => {
@@ -162,9 +156,6 @@ const UserManagement = () => {
 
   // Enhanced function to get NIC for technician user
   const getTechnicianNIC = (user) => {
-    // Only technicians should have NIC
-    if (user.RoleID !== '3' && user.RoleID !== 3) return null;
-    
     // First check if NIC is directly in user object
     if (user.NIC && user.NIC !== '-' && user.NIC !== 'N/A') {
       return user.NIC;
@@ -180,8 +171,7 @@ const UserManagement = () => {
     return null;
   };
 
-  // Get user data from state with enhanced data merging
-  const adminUsers = admins?.data?.ResultSet || [];
+  // Get technician users from state with enhanced data merging
   const technicianUsers = technicians?.data?.ResultSet || [];
   
   // Enhance technician users with NIC data
@@ -193,34 +183,30 @@ const UserManagement = () => {
     };
   });
 
-  const allUsers = [...adminUsers, ...enhancedTechnicianUsers];
+  const allTechniciansData = enhancedTechnicianUsers;
 
-  // Sort users - active first
-  const sortedAndFilteredUsers = allUsers && allUsers.length > 0 
-    ? [...allUsers]
+  // Sort technicians - active first
+  const sortedAndFilteredTechnicians = allTechniciansData && allTechniciansData.length > 0 
+    ? [...allTechniciansData]
         .sort((a, b) => {
           const statusA = getStatusDetails(a);
           const statusB = getStatusDetails(b);
           
-          // Active users first
+          // Active technicians first
           if (statusA.isActive && !statusB.isActive) return -1;
           if (!statusA.isActive && statusB.isActive) return 1;
           
           // Then sort by name
           return (a.UserName || '').localeCompare(b.UserName || '');
         })
-        .filter(user => {
-          const statusDetails = getStatusDetails(user);
-          const technicianNIC = getTechnicianNIC(user);
+        .filter(technician => {
+          const statusDetails = getStatusDetails(technician);
+          const technicianNIC = getTechnicianNIC(technician);
           const matchesSearch = 
-            user.UserName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            user.Email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            user.MobileNo?.includes(searchTerm) ||
+            technician.UserName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            technician.Email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            technician.MobileNo?.includes(searchTerm) ||
             (technicianNIC && technicianNIC.toLowerCase().includes(searchTerm.toLowerCase()));
-          
-          // Apply role filter
-          if (userFilter === 'admins' && (user.RoleID !== '2' && user.RoleID !== 2)) return false;
-          if (userFilter === 'technicians' && (user.RoleID !== '3' && user.RoleID !== 3)) return false;
           
           if (statusFilter === 'all') return matchesSearch;
           if (statusFilter === 'active') return statusDetails.isActive && matchesSearch;
@@ -229,132 +215,110 @@ const UserManagement = () => {
         })
     : [];
 
-  // Count users by status and role
-  const userCounts = allUsers && allUsers.length > 0 
-    ? allUsers.reduce((counts, user) => {
-        const statusDetails = getStatusDetails(user);
-        const isAdmin = user.RoleID === '2' || user.RoleID === 2;
-        const isTechnician = user.RoleID === '3' || user.RoleID === 3;
+  // Count technicians by status
+  const technicianCounts = allTechniciansData && allTechniciansData.length > 0 
+    ? allTechniciansData.reduce((counts, technician) => {
+        const statusDetails = getStatusDetails(technician);
         
         if (statusDetails.isActive) {
           counts.active++;
-          if (isAdmin) counts.admins++;
-          if (isTechnician) counts.technicians++;
         } else {
           counts.inactive++;
         }
         
         counts.total++;
         return counts;
-      }, { total: 0, active: 0, inactive: 0, admins: 0, technicians: 0 })
-    : { total: 0, active: 0, inactive: 0, admins: 0, technicians: 0 };
+      }, { total: 0, active: 0, inactive: 0 })
+    : { total: 0, active: 0, inactive: 0 };
 
-  const handleAddUser = async (values) => {
+  const handleAddTechnician = async (values) => {
     try {
-      const userData = {
+      const technicianData = {
         UserName: values.userName,
         Email: values.email,
         MobileNo: values.mobileNo,
-        RoleID: Number(values.roleID)
+        RoleID: 3, // Always set to technician role
+        NIC: values.nic // NIC is required for technicians
       };
 
-      // Add NIC only for technicians (RoleID = 3)
-      if (Number(values.roleID) === 3) {
-        if (!values.nic) {
-          message.error('NIC is required for technicians');
-          return;
-        }
-        userData.NIC = values.nic;
-      }
-
-      const result = await dispatch(signupUserAction(userData));
+      const result = await dispatch(signupUserAction(technicianData));
       
       if (result.success) {
-        message.success('User added successfully!');
+        message.success('Technician added successfully!');
       } else {
-        message.error(result.message || 'Failed to add user');
+        message.error(result.message || 'Failed to add technician');
       }
     } catch (error) {
-      console.error('Failed to add user:', error);
-      message.error('Failed to add user');
+      console.error('Failed to add technician:', error);
+      message.error('Failed to add technician');
     }
   };
 
-  const handleDeactivateUser = async (user) => {
+  const handleDeactivateTechnician = async (technician) => {
     try {
       setDeleteLoading(true);
       
-      if (user.RoleID === '3' || user.RoleID === 3) {
-        // Deactivate technician in both tables
-        const technician = findMatchingTechnician(user);
-        if (technician) {
-          const result = await dispatch(deactivateTechnicianCompleteAction(user.UserID, technician.TechnicianID));
-          
-          if (result.userSuccess && result.technicianSuccess) {
-            message.success('Technician deactivated successfully in both tables!');
-          } else if (result.userSuccess && !result.technicianSuccess) {
-            message.warning('User deactivated but technician deactivation failed: ' + result.technicianMessage);
-          } else if (!result.userSuccess && result.technicianSuccess) {
-            message.warning('Technician deactivated but user deactivation failed: ' + result.userMessage);
-          } else {
-            message.error('Failed to deactivate technician in both tables');
-          }
+      // Deactivate technician in both tables
+      const technicianRecord = findMatchingTechnician(technician);
+      if (technicianRecord) {
+        const result = await dispatch(deactivateTechnicianCompleteAction(technician.UserID, technicianRecord.TechnicianID));
+        
+        if (result.userSuccess && result.technicianSuccess) {
+          message.success('Technician deactivated successfully in both tables!');
+        } else if (result.userSuccess && !result.technicianSuccess) {
+          message.warning('User deactivated but technician deactivation failed: ' + result.technicianMessage);
+        } else if (!result.userSuccess && result.technicianSuccess) {
+          message.warning('Technician deactivated but user deactivation failed: ' + result.userMessage);
         } else {
-          // Fallback: only deactivate in Users table
-          const result = await dispatch(deactivateUserAction(user.UserID));
-          if (result.success) {
-            message.success('User deactivated successfully!');
-          } else {
-            message.error(result.message || 'Failed to deactivate user');
-          }
+          message.error('Failed to deactivate technician in both tables');
         }
       } else {
-        // Deactivate admin (only in Users table)
-        const result = await dispatch(deactivateUserAction(user.UserID));
+        // Fallback: only deactivate in Users table
+        const result = await dispatch(deactivateUserAction(technician.UserID));
         if (result.success) {
-          message.success('Admin deactivated successfully!');
+          message.success('Technician deactivated successfully!');
         } else {
-          message.error(result.message || 'Failed to deactivate admin');
+          message.error(result.message || 'Failed to deactivate technician');
         }
       }
 
       setDeleteConfirm(null);
-      fetchAllUsers();
+      fetchTechnicians();
     } catch (error) {
-      console.error('Failed to deactivate user:', error);
-      message.error('Failed to deactivate user');
+      console.error('Failed to deactivate technician:', error);
+      message.error('Failed to deactivate technician');
     } finally {
       setDeleteLoading(false);
     }
   };
 
-  const handleActivateUser = async (user) => {
+  const handleActivateTechnician = async (technician) => {
     try {
       setActivateLoading(true);
       // Note: You'll need to implement activateUserAction similar to deactivate
-      const result = await dispatch(deactivateUserAction(user.UserID)); // This should be activateUserAction
+      const result = await dispatch(deactivateUserAction(technician.UserID)); // This should be activateUserAction
       if (result.success) {
-        message.success('User activated successfully!');
+        message.success('Technician activated successfully!');
       } else {
-        message.error(result.message || 'Failed to activate user');
+        message.error(result.message || 'Failed to activate technician');
       }
       setActivateConfirm(null);
-      fetchAllUsers();
+      fetchTechnicians();
     } catch (error) {
-      console.error('Failed to activate user:', error);
-      message.error('Failed to activate user');
+      console.error('Failed to activate technician:', error);
+      message.error('Failed to activate technician');
     } finally {
       setActivateLoading(false);
     }
   };
 
   const handleRefresh = () => {
-    fetchAllUsers();
-    message.info('Refreshing user data...');
+    fetchTechnicians();
+    message.info('Refreshing technician data...');
   };
 
-  const showDetails = (user) => {
-    setSelectedUser(user);
+  const showDetails = (technician) => {
+    setSelectedUser(technician);
     setIsModalVisible(true);
   };
 
@@ -362,10 +326,9 @@ const UserManagement = () => {
     setIsModalVisible(false);
   };
 
-  const handleAddUserCancel = () => {
+  const handleAddTechnicianCancel = () => {
     setIsAddModalVisible(false);
     addUserForm.resetFields();
-    setSelectedRole('2');
   };
 
   const toggleRowExpansion = (record) => {
@@ -373,13 +336,6 @@ const UserManagement = () => {
       setExpandedRowKeys(expandedRowKeys.filter(key => key !== record.UserID));
     } else {
       setExpandedRowKeys([...expandedRowKeys, record.UserID]);
-    }
-  };
-
-  const handleRoleChange = (role) => {
-    setSelectedRole(role);
-    if (role !== '3') {
-      addUserForm.setFieldsValue({ nic: undefined });
     }
   };
 
@@ -394,7 +350,7 @@ const UserManagement = () => {
           <Text className="text-xl font-bold text-gray-900">{value}</Text>
           {progress !== undefined && (
             <Progress 
-              percent={Math.round((value / userCounts.total) * 100)} 
+              percent={Math.round((value / technicianCounts.total) * 100)} 
               size="small" 
               strokeColor={color}
               showInfo={false}
@@ -414,7 +370,6 @@ const UserManagement = () => {
   const renderMobileCard = (record) => {
     const isExpanded = expandedRowKeys.includes(record.UserID);
     const statusDetails = getStatusDetails(record);
-    const isTechnician = record.RoleID === '3' || record.RoleID === 3;
     const technicianNIC = getTechnicianNIC(record);
     
     return (
@@ -427,12 +382,12 @@ const UserManagement = () => {
           <div className="flex items-center space-x-3">
             <Avatar 
               size="large" 
-              icon={isTechnician ? <IdcardFilled /> : <SecurityScanOutlined />} 
-              className={isTechnician ? "bg-blue-100 text-blue-600" : "bg-purple-100 text-purple-600"}
+              icon={<ToolOutlined />} 
+              className="bg-blue-100 text-blue-600"
             />
             <div>
               <Text strong className="text-lg font-semibold text-gray-900 block">
-                {record.UserName || 'Unknown User'}
+                {record.UserName || 'Unknown Technician'}
               </Text>
               <Text className="text-sm text-gray-500">{record.UserID}</Text>
             </div>
@@ -461,21 +416,19 @@ const UserManagement = () => {
             <MailOutlined className="mr-2 text-green-500" />
             <span>{record.Email || 'N/A'}</span>
           </div>
-          {isTechnician && (
-            <div className="flex items-center text-sm text-gray-600">
-              <IdcardOutlined className="mr-2 text-orange-500" />
-              <span>NIC: {technicianNIC || 'N/A'}</span>
-            </div>
-          )}
+          <div className="flex items-center text-sm text-gray-600">
+            <IdcardOutlined className="mr-2 text-orange-500" />
+            <span>NIC: {technicianNIC || 'N/A'}</span>
+          </div>
         </div>
 
         <div className="mb-3">
           <Tag 
-            color={isTechnician ? 'blue' : 'purple'} 
-            icon={isTechnician ? <IdcardFilled /> : <SecurityScanOutlined />}
+            color="blue" 
+            icon={<ToolOutlined />}
             className="font-semibold"
           >
-            {isTechnician ? 'TECHNICIAN' : 'ADMIN'}
+            TECHNICIAN
           </Tag>
         </div>
 
@@ -493,7 +446,7 @@ const UserManagement = () => {
             </Tooltip>
             
             {statusDetails.isActive ? (
-              <Tooltip title="Deactivate User">
+              <Tooltip title="Deactivate Technician">
                 <Button
                   type="text"
                   icon={<DeleteOutlined className="text-red-600" />}
@@ -502,7 +455,7 @@ const UserManagement = () => {
                 />
               </Tooltip>
             ) : (
-              <Tooltip title="Activate User">
+              <Tooltip title="Activate Technician">
                 <Button
                   type="text"
                   icon={<CheckOutlined className="text-green-600" />}
@@ -528,18 +481,16 @@ const UserManagement = () => {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <Text strong className="text-sm text-gray-700">Role:</Text>
-                <Text className="text-sm text-gray-600">{isTechnician ? 'Technician' : 'Admin'}</Text>
+                <Text className="text-sm text-gray-600">Technician</Text>
               </div>
               <div className="flex justify-between">
                 <Text strong className="text-sm text-gray-700">Status:</Text>
                 <Text className="text-sm text-gray-600">{statusDetails.text}</Text>
               </div>
-              {isTechnician && (
-                <div className="flex justify-between">
-                  <Text strong className="text-sm text-gray-700">NIC:</Text>
-                  <Text className="text-sm text-gray-600">{technicianNIC || 'N/A'}</Text>
-                </div>
-              )}
+              <div className="flex justify-between">
+                <Text strong className="text-sm text-gray-700">NIC:</Text>
+                <Text className="text-sm text-gray-600">{technicianNIC || 'N/A'}</Text>
+              </div>
               
               <div className="pt-2">
                 <Button 
@@ -559,26 +510,23 @@ const UserManagement = () => {
 
   const columns = [
     {
-      title: <span className="text-sm font-semibold text-gray-700">User ID</span>,
+      title: <span className="text-sm font-semibold text-gray-700">Technician ID</span>,
       dataIndex: 'UserID',
       key: 'UserID',
-      render: (text, record) => {
-        const isTechnician = record.RoleID === '3' || record.RoleID === 3;
-        return (
-          <div className="flex items-center">
-            <Avatar 
-              size="small" 
-              icon={isTechnician ? <IdcardFilled /> : <SecurityScanOutlined />} 
-              className={isTechnician ? "bg-blue-100 text-blue-600 mr-2" : "bg-purple-100 text-purple-600 mr-2"}
-            />
-            <Text strong className="text-base font-semibold text-gray-900">{text}</Text>
-          </div>
-        );
-      },
+      render: (text, record) => (
+        <div className="flex items-center">
+          <Avatar 
+            size="small" 
+            icon={<ToolOutlined />} 
+            className="bg-blue-100 text-blue-600 mr-2"
+          />
+          <Text strong className="text-base font-semibold text-gray-900">{text}</Text>
+        </div>
+      ),
       width: 120,
     },
     {
-      title: <span className="text-sm font-semibold text-gray-700">Username</span>,
+      title: <span className="text-sm font-semibold text-gray-700">Technician Name</span>,
       dataIndex: 'UserName',
       key: 'UserName',
       render: (text) => <Text className="text-base font-medium text-gray-800">{text || 'N/A'}</Text>,
@@ -612,40 +560,16 @@ const UserManagement = () => {
       title: <span className="text-sm font-semibold text-gray-700">NIC</span>,
       key: 'nic',
       render: (_, record) => {
-        const isTechnician = record.RoleID === '3' || record.RoleID === 3;
         const technicianNIC = getTechnicianNIC(record);
         
         return (
           <div className="flex items-center">
-            {isTechnician ? (
-              <div className="flex items-center">
-                <IdcardOutlined className="text-orange-500 mr-2" />
-                <Text className="text-base text-gray-700">{technicianNIC || 'N/A'}</Text>
-              </div>
-            ) : (
-              <Text className="text-base text-gray-400">-</Text>
-            )}
+            <IdcardOutlined className="text-orange-500 mr-2" />
+            <Text className="text-base text-gray-700">{technicianNIC || 'N/A'}</Text>
           </div>
         );
       },
       width: 150,
-    },
-    {
-      title: <span className="text-sm font-semibold text-gray-700">Role</span>,
-      key: 'role',
-      render: (_, record) => {
-        const isTechnician = record.RoleID === '3' || record.RoleID === 3;
-        return (
-          <Tag 
-            color={isTechnician ? 'blue' : 'purple'} 
-            icon={isTechnician ? <IdcardFilled /> : <SecurityScanOutlined />}
-            className="font-semibold"
-          >
-            {isTechnician ? 'TECHNICIAN' : 'ADMIN'}
-          </Tag>
-        );
-      },
-      width: 120,
     },
     {
       title: <span className="text-sm font-semibold text-gray-700">Status</span>,
@@ -692,12 +616,12 @@ const UserManagement = () => {
           statusDetails.isActive ? {
             key: 'deactivate',
             icon: <DeleteOutlined className="text-red-600" />,
-            label: 'Deactivate User',
+            label: 'Deactivate Technician',
             onClick: () => setDeleteConfirm(record)
           } : {
             key: 'activate',
             icon: <CheckOutlined className="text-green-600" />,
-            label: 'Activate User',
+            label: 'Activate Technician',
             onClick: () => setActivateConfirm(record)
           }
         ];
@@ -735,7 +659,7 @@ const UserManagement = () => {
         <div className="text-center">
           <Spin size="large" className="text-blue-600" />
           <div className="mt-4">
-            <Text className="text-base text-gray-600 font-medium">Loading users...</Text>
+            <Text className="text-base text-gray-600 font-medium">Loading technicians...</Text>
           </div>
         </div>
       </div>
@@ -753,8 +677,8 @@ const UserManagement = () => {
         >
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-white mb-2">User Management</h1>
-              <Text className="text-blue-100">Manage administrators and technicians in the system</Text>
+              <h1 className="text-2xl font-bold text-white mb-2">Technician Management</h1>
+              <Text className="text-blue-100">Manage technicians in the system</Text>
             </div>
             <Space size="middle">
               <Button 
@@ -762,7 +686,7 @@ const UserManagement = () => {
                 onClick={() => setIsAddModalVisible(true)}
                 className="bg-white text-blue-600 hover:bg-gray-100 border-0 rounded-lg h-10 px-4 font-medium"
               >
-                {screens.xs ? '' : 'Add User'}
+                {screens.xs ? '' : 'Add Technician'}
               </Button>
               <Button 
                 icon={<ReloadOutlined />} 
@@ -779,8 +703,8 @@ const UserManagement = () => {
         <Row gutter={[16, 16]}>
           <Col xs={24} sm={12} lg={6}>
             <StatCard 
-              title="Total Users" 
-              value={userCounts.total} 
+              title="Total Technicians" 
+              value={technicianCounts.total} 
               icon={<TeamOutlined />}
               color="text-blue-600"
               progress
@@ -788,8 +712,8 @@ const UserManagement = () => {
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <StatCard 
-              title="Active Users" 
-              value={userCounts.active} 
+              title="Active Technicians" 
+              value={technicianCounts.active} 
               icon={<CheckCircleOutlined />}
               color="text-green-600"
               progress
@@ -797,19 +721,19 @@ const UserManagement = () => {
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <StatCard 
-              title="Admins" 
-              value={userCounts.admins} 
-              icon={<SecurityScanOutlined />}
-              color="text-purple-600"
+              title="Available" 
+              value={technicianCounts.active} 
+              icon={<ToolOutlined />}
+              color="text-blue-600"
               progress
             />
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <StatCard 
-              title="Technicians" 
-              value={userCounts.technicians} 
-              icon={<IdcardFilled />}
-              color="text-blue-600"
+              title="Inactive" 
+              value={technicianCounts.inactive} 
+              icon={<CloseCircleOutlined />}
+              color="text-red-600"
               progress
             />
           </Col>
@@ -842,17 +766,6 @@ const UserManagement = () => {
             
             <div className="flex flex-col md:flex-row gap-2">
               <Select
-                value={userFilter}
-                onChange={setUserFilter}
-                className="w-full md:w-32"
-                placeholder="Role"
-              >
-                <Option value="all">All Roles</Option>
-                <Option value="admins">Admins</Option>
-                <Option value="technicians">Technicians</Option>
-              </Select>
-              
-              <Select
                 value={statusFilter}
                 onChange={setStatusFilter}
                 className="w-full md:w-32"
@@ -867,20 +780,20 @@ const UserManagement = () => {
           
           <div className="mt-2">
             <Text className="text-xs font-medium text-gray-600">
-              Showing {sortedAndFilteredUsers.length} of {userCounts.total} users
+              Showing {sortedAndFilteredTechnicians.length} of {technicianCounts.total} technicians
             </Text>
           </div>
         </Card>
 
-        {/* Users Table/Cards */}
+        {/* Technicians Table/Cards */}
         <Card 
           bordered={false} 
           className="shadow-lg rounded-2xl border-0 bg-white overflow-hidden"
           bodyStyle={{ padding: '24px' }}
           title={
             <div className="flex items-center justify-between">
-              <Text strong className="text-xl text-gray-900">User List</Text>
-              <Text className="text-gray-500">{userCounts.total} users found</Text>
+              <Text strong className="text-xl text-gray-900">Technician List</Text>
+              <Text className="text-gray-500">{technicianCounts.total} technicians found</Text>
             </div>
           }
           extra={
@@ -896,15 +809,15 @@ const UserManagement = () => {
           {/* Mobile View */}
           {!screens.md && (
             <div className="md:hidden">
-              {sortedAndFilteredUsers.length > 0 ? (
-                sortedAndFilteredUsers.map(record => renderMobileCard(record))
+              {sortedAndFilteredTechnicians.length > 0 ? (
+                sortedAndFilteredTechnicians.map(record => renderMobileCard(record))
               ) : (
                 <div className="text-center py-12">
-                  <UserOutlined className="text-4xl text-gray-300 mb-4" />
+                  <ToolOutlined className="text-4xl text-gray-300 mb-4" />
                   <Text className="text-base text-gray-600 font-medium">
-                    {allUsers.length > 0 
-                      ? `No ${userFilter !== 'all' ? userFilter : ''} users found` 
-                      : 'No users found'}
+                    {technicianUsers.length > 0 
+                      ? 'No technicians found matching your search' 
+                      : 'No technicians found'}
                   </Text>
                 </div>
               )}
@@ -915,13 +828,13 @@ const UserManagement = () => {
           {screens.md && (
             <Table 
               columns={columns} 
-              dataSource={sortedAndFilteredUsers} 
+              dataSource={sortedAndFilteredTechnicians} 
               rowKey="UserID"
               pagination={{
                 pageSize: 10,
                 showSizeChanger: true,
                 pageSizeOptions: ['10', '20', '50'],
-                showTotal: (total) => <span className="text-sm font-medium text-gray-600">Total {total} users</span>,
+                showTotal: (total) => <span className="text-sm font-medium text-gray-600">Total {total} technicians</span>,
                 responsive: true,
                 size: 'default',
                 className: 'rounded-lg'
@@ -933,11 +846,11 @@ const UserManagement = () => {
               locale={{
                 emptyText: (
                   <div className="py-16 text-center">
-                    <UserOutlined className="text-4xl text-gray-300 mb-4" />
+                    <ToolOutlined className="text-4xl text-gray-300 mb-4" />
                     <Text className="text-base text-gray-600 font-medium block">
-                      {allUsers.length > 0 
-                        ? `No ${userFilter !== 'all' ? userFilter : ''} users found` 
-                        : 'No users found'}
+                      {technicianUsers.length > 0 
+                        ? 'No technicians found matching your search' 
+                        : 'No technicians found'}
                     </Text>
                   </div>
                 )
@@ -946,12 +859,12 @@ const UserManagement = () => {
           )}
         </Card>
 
-        {/* User Details Modal */}
+        {/* Technician Details Modal */}
         <Modal
           title={
             <div className="text-center pb-4 border-b border-gray-200">
               <span className="text-xl font-bold text-gray-900">
-                User Details
+                Technician Details
               </span>
             </div>
           }
@@ -976,8 +889,8 @@ const UserManagement = () => {
               <div className="flex items-center space-x-4">
                 <Avatar 
                   size={64} 
-                  icon={selectedUser.RoleID === '3' || selectedUser.RoleID === 3 ? <IdcardFilled /> : <SecurityScanOutlined />} 
-                  className={selectedUser.RoleID === '3' || selectedUser.RoleID === 3 ? "bg-blue-100 text-blue-600" : "bg-purple-100 text-purple-600"}
+                  icon={<ToolOutlined />} 
+                  className="bg-blue-100 text-blue-600"
                 />
                 <div>
                   <Text strong className="text-xl text-gray-900 block">{selectedUser.UserName}</Text>
@@ -1008,12 +921,10 @@ const UserManagement = () => {
                 
                 <div className="space-y-4">
                   <div className="flex items-center">
-                    <SecurityScanOutlined className="text-purple-500 mr-3" />
+                    <ToolOutlined className="text-blue-500 mr-3" />
                     <div>
                       <Text strong className="text-gray-700 block">Role</Text>
-                      <Text className="text-gray-600">
-                        {selectedUser.RoleID === '3' || selectedUser.RoleID === 3 ? 'Technician' : 'Admin'}
-                      </Text>
+                      <Text className="text-gray-600">Technician</Text>
                     </div>
                   </div>
                   
@@ -1027,36 +938,34 @@ const UserManagement = () => {
                 </div>
               </div>
               
-              {/* NIC Information for Technicians */}
-              {(selectedUser.RoleID === '3' || selectedUser.RoleID === 3) && (
-                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                  <div className="flex items-center mb-2">
-                    <IdcardOutlined className="text-blue-600 mr-2" />
-                    <Text strong className="text-blue-800">Technician Information</Text>
-                  </div>
-                  <div className="flex items-center">
-                    <Text strong className="text-blue-700 mr-2">NIC:</Text>
-                    <Text className="text-blue-600 font-medium">
-                      {getTechnicianNIC(selectedUser) || 'N/A'}
-                    </Text>
-                  </div>
+              {/* NIC Information */}
+              <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                <div className="flex items-center mb-2">
+                  <IdcardOutlined className="text-blue-600 mr-2" />
+                  <Text strong className="text-blue-800">Technician Information</Text>
                 </div>
-              )}
+                <div className="flex items-center">
+                  <Text strong className="text-blue-700 mr-2">NIC:</Text>
+                  <Text className="text-blue-600 font-medium">
+                    {getTechnicianNIC(selectedUser) || 'N/A'}
+                  </Text>
+                </div>
+              </div>
             </div>
           )}
         </Modal>
 
-        {/* Add User Modal */}
+        {/* Add Technician Modal */}
         <Modal
           title={
             <div className="text-center pb-4 border-b border-gray-200">
               <span className="text-xl font-bold text-gray-900">
-                Add New User
+                Add New Technician
               </span>
             </div>
           }
           open={isAddModalVisible}
-          onCancel={handleAddUserCancel}
+          onCancel={handleAddTechnicianCancel}
           footer={null}
           width={screens.xs ? '95%' : 500}
           centered
@@ -1066,16 +975,16 @@ const UserManagement = () => {
           <Form
             form={addUserForm}
             layout="vertical"
-            onFinish={handleAddUser}
+            onFinish={handleAddTechnician}
             className="space-y-4"
           >
             <Form.Item
-              label={<span className="text-sm font-semibold text-gray-700">Username</span>}
+              label={<span className="text-sm font-semibold text-gray-700">Technician Name</span>}
               name="userName"
-              rules={[{ required: true, message: 'Please enter username' }]}
+              rules={[{ required: true, message: 'Please enter technician name' }]}
             >
               <Input 
-                placeholder="Enter username" 
+                placeholder="Enter technician name" 
                 size="large"
                 className="rounded-lg border-gray-300 hover:border-blue-400 focus:border-blue-500"
                 prefix={<UserOutlined className="text-gray-400" />}
@@ -1115,44 +1024,25 @@ const UserManagement = () => {
             </Form.Item>
 
             <Form.Item
-              label={<span className="text-sm font-semibold text-gray-700">Role</span>}
-              name="roleID"
-              rules={[{ required: true, message: 'Please select role' }]}
+              label={<span className="text-sm font-semibold text-gray-700">NIC Number</span>}
+              name="nic"
+              rules={[
+                { required: true, message: 'Please enter NIC number' },
+                { pattern: /^[0-9vVxX]+$/, message: 'Please enter a valid NIC number' }
+              ]}
             >
-              <Select 
+              <Input 
+                placeholder="Enter NIC number" 
                 size="large"
-                placeholder="Select role"
-                onChange={handleRoleChange}
-                className="rounded-lg"
-              >
-                <Option value="2">Admin</Option>
-                <Option value="3">Technician</Option>
-              </Select>
+                className="rounded-lg border-gray-300 hover:border-blue-400 focus:border-blue-500"
+                prefix={<IdcardOutlined className="text-gray-400" />}
+              />
             </Form.Item>
-
-            {/* NIC Field - Only for Technicians */}
-            {selectedRole === '3' && (
-              <Form.Item
-                label={<span className="text-sm font-semibold text-gray-700">NIC Number</span>}
-                name="nic"
-                rules={[
-                  { required: true, message: 'Please enter NIC number for technician' },
-                  { pattern: /^[0-9vVxX]+$/, message: 'Please enter a valid NIC number' }
-                ]}
-              >
-                <Input 
-                  placeholder="Enter NIC number" 
-                  size="large"
-                  className="rounded-lg border-gray-300 hover:border-blue-400 focus:border-blue-500"
-                  prefix={<IdcardOutlined className="text-gray-400" />}
-                />
-              </Form.Item>
-            )}
 
             <Form.Item className="mb-0 pt-4">
               <div className="flex flex-col md:flex-row gap-3">
                 <Button 
-                  onClick={handleAddUserCancel}
+                  onClick={handleAddTechnicianCancel}
                   className="w-full md:w-1/2 h-12 text-base font-medium border border-gray-300 hover:border-gray-400 rounded-lg"
                 >
                   Cancel
@@ -1163,7 +1053,7 @@ const UserManagement = () => {
                   loading={signupLoading}
                   className="w-full md:w-1/2 h-12 text-base font-medium bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 border-0 rounded-lg"
                 >
-                  Add User
+                  Add Technician
                 </Button>
               </div>
             </Form.Item>
@@ -1193,7 +1083,7 @@ const UserManagement = () => {
               type="primary" 
               danger
               loading={deleteLoading}
-              onClick={() => handleDeactivateUser(deleteConfirm)}
+              onClick={() => handleDeactivateTechnician(deleteConfirm)}
               className="px-6 text-sm font-medium rounded-lg h-10"
             >
               Deactivate
@@ -1209,7 +1099,7 @@ const UserManagement = () => {
             </Text>
             <div className="mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
               <Text className="text-sm text-red-700">
-                This user will no longer be able to access the system.
+                This technician will no longer be able to access the system.
               </Text>
             </div>
           </div>
@@ -1237,7 +1127,7 @@ const UserManagement = () => {
               key="activate"
               type="primary" 
               loading={activateLoading}
-              onClick={() => handleActivateUser(activateConfirm)}
+              onClick={() => handleActivateTechnician(activateConfirm)}
               className="px-6 text-sm font-medium bg-green-600 hover:bg-green-700 border-0 rounded-lg h-10"
             >
               Activate
@@ -1253,7 +1143,7 @@ const UserManagement = () => {
             </Text>
             <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
               <Text className="text-sm text-green-700">
-                This user will be able to access the system again.
+                This technician will be able to access the system again.
               </Text>
             </div>
           </div>
@@ -1263,4 +1153,4 @@ const UserManagement = () => {
   );
 };
 
-export default UserManagement;
+export default SupervisorUserManagement;

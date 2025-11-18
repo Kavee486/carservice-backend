@@ -1,8 +1,6 @@
 // services/jobCardItemServices.js
 import axios from 'axios';
 
-//const API_BASE_URL = 'http://localhost:60748';
-
 // Function to fetch all job card items
 export const fetchAllJobCardItems = async () => {
   try {

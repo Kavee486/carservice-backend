@@ -16,6 +16,7 @@ import TechnicianDashboard from './pages/TechnicianDashboard';
 import CustomerDashboard from './pages/CustomerDashboard';
 import SupervisorDashboard from './pages/SupervisorDashboard';
 import SupervisorJobCards from './pages/SupervisorJobCards';
+import SupervisorUserManagement from './pages/SupervisorUserManagement'; // Add this import
 import Profile from './pages/Profile';
 import PartsInventory from './pages/PartsInventory';
 import Services from './pages/Services';
@@ -31,7 +32,7 @@ import UserManagement from './pages/UserManagement';
 import TimeslotManagement from './pages/TimeslotManagement';
 import CustomersManagement from './pages/CustomersManagement';
 import Categories from './pages/Categories';
-import Invoicing from './pages/Invoicing'; // Add this import
+import Invoicing from './pages/Invoicing';
 import PreviousServices from './pages/PreviousServices';
 
 function App() {
@@ -60,7 +61,6 @@ function App() {
 
   const handleLoginSuccess = (userData) => {
     console.log('handleLoginSuccess called with:', userData);
-    console.log('Setting user state to:', userData);
     setUser(userData);
     
     setTimeout(() => {
@@ -109,6 +109,60 @@ function App() {
     return () => clearInterval(interval);
   }, [user]);
 
+  // Helper function to check user role with multiple possible formats
+  const checkUserRole = (requiredRole) => {
+    if (!user) return false;
+
+    const userRole = user.role;
+    const roleString = String(userRole).toLowerCase();
+    const requiredRoleString = String(requiredRole).toLowerCase();
+
+    return roleString === requiredRoleString || 
+           roleString === USER_ROLES[requiredRole]?.toLowerCase() ||
+           user.roleString === requiredRoleString ||
+           user.numericRole === getUserNumericRole(requiredRole);
+  };
+
+  const getUserNumericRole = (role) => {
+    switch (String(role).toLowerCase()) {
+      case 'admin': return 0;
+      case 'customer': return 1;
+      case 'technician': return 2;
+      case 'supervisor': return 3;
+      default: return -1;
+    }
+  };
+
+  // Protected Route component
+  const ProtectedRoute = ({ children, requiredRole, title }) => {
+    if (!user) {
+      return <Navigate to="/login" replace />;
+    }
+
+    if (requiredRole && !checkUserRole(requiredRole)) {
+      // Redirect to appropriate dashboard based on actual role
+      const actualRole = user.role?.toLowerCase();
+      switch (actualRole) {
+        case 'admin':
+          return <Navigate to="/admin" replace />;
+        case 'technician':
+          return <Navigate to="/technician" replace />;
+        case 'customer':
+          return <Navigate to="/customer" replace />;
+        case 'supervisor':
+          return <Navigate to="/supervisor" replace />;
+        default:
+          return <Navigate to="/login" replace />;
+      }
+    }
+
+    return (
+      <DashboardLayout title={title} onLogout={handleLogout}>
+        {children}
+      </DashboardLayout>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -120,424 +174,258 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* Public Routes */}
         <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login onLoginSuccess={handleLoginSuccess} />} />
-        <Route path="/signup" element={<Signup />} />
+        <Route 
+          path="/login" 
+          element={
+            user ? <Navigate to={`/${user.role?.toLowerCase()}`} replace /> : <Login onLoginSuccess={handleLoginSuccess} />
+          } 
+        />
+        <Route 
+          path="/signup" 
+          element={user ? <Navigate to={`/${user.role?.toLowerCase()}`} replace /> : <Signup />} 
+        />
 
-        {/* Admin Route */}
+        {/* Admin Routes */}
         <Route
           path="/admin"
           element={
-            (() => {
-              console.log('Admin route - user:', user, 'user.role:', user?.role, 'USER_ROLES.ADMIN:', USER_ROLES.ADMIN);
-              return user?.role === USER_ROLES.ADMIN ? (
-                <DashboardLayout title="Admin Dashboard" onLogout={handleLogout}>
-                  <AdminDashboard />
-                </DashboardLayout>
-              ) : (
-                <Navigate to="/login" replace />
-              );
-            })()
+            <ProtectedRoute requiredRole="ADMIN" title="Admin Dashboard">
+              <AdminDashboard />
+            </ProtectedRoute>
           }
         />
-
-        {/* Technician Route */}
-        <Route
-          path="/technician"
-          element={
-            (() => {
-              console.log('Technician route - user:', user, 'user.role:', user?.role, 'USER_ROLES.TECHNICIAN:', USER_ROLES.TECHNICIAN);
-              return user?.role === USER_ROLES.TECHNICIAN ? (
-                <DashboardLayout title="Technician Dashboard" onLogout={handleLogout}>
-                  <TechnicianDashboard />
-                </DashboardLayout>
-              ) : (
-                <Navigate to="/login" replace />
-              );
-            })()
-          }
-        />
-
-        {/* Customer Route */}
-        <Route
-          path="/customer"
-          element={
-            (() => {
-              console.log('Customer route - user:', user, 'user.role:', user?.role, 'USER_ROLES.CUSTOMER:', USER_ROLES.CUSTOMER);
-              console.log('Role comparison:', user?.role, '===', USER_ROLES.CUSTOMER, ':', user?.role === USER_ROLES.CUSTOMER);
-              
-              const isCustomer = user && (user.role === USER_ROLES.CUSTOMER || user.role === 'customer' || user.role === 1);
-              console.log('isCustomer:', isCustomer);
-              
-              return isCustomer ? (
-                <DashboardLayout title="Customer Dashboard" onLogout={handleLogout}>
-                  <CustomerDashboard />
-                </DashboardLayout>
-              ) : (
-                <Navigate to="/login" replace />
-              );
-            })()
-          }
-        />
-
-        {/* Supervisor Route */}
-        <Route
-          path="/supervisor"
-          element={
-            (() => {
-              console.log('Supervisor route - user:', user, 'user.role:', user?.role, 'USER_ROLES.SUPERVISOR:', USER_ROLES.SUPERVISOR);
-              return user?.role === USER_ROLES.SUPERVISOR ? (
-                <DashboardLayout title="Supervisor Dashboard" onLogout={handleLogout}>
-                  <SupervisorDashboard />
-                </DashboardLayout>
-              ) : (
-                <Navigate to="/login" replace />
-              );
-            })()
-          }
-        />
-        <Route
-          path="/supervisor/job-cards"
-          element={
-            user?.role === USER_ROLES.SUPERVISOR ? (
-              <DashboardLayout title="Supervisor Job Cards" onLogout={handleLogout}>
-                <SupervisorJobCards />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-
-        {/* Profile Route */}
-        <Route
-          path="/profile"
-          element={
-            user ? (
-              <DashboardLayout title="My Profile" onLogout={handleLogout}>
-                <Profile />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-
-        {/* Admin Subroutes */}
         <Route
           path="/admin/customers"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Customers Management" onLogout={handleLogout}>
-                <Customers />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Customers Management">
+              <Customers />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/parts"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Parts Inventory" onLogout={handleLogout}>
-                <PartsInventory />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Parts Inventory">
+              <PartsInventory />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/services"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Services Management" onLogout={handleLogout}>
-                <Services />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Services Management">
+              <Services />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/appointments"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Appointments Management" onLogout={handleLogout}>
-                <Appointments />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Appointments Management">
+              <Appointments />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/timeslots"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Timeslot Management" onLogout={handleLogout}>
-                <TimeslotManagement />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Timeslot Management">
+              <TimeslotManagement />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/vehicles"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Vehicles Management" onLogout={handleLogout}>
-                <Vehicles />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Vehicles Management">
+              <Vehicles />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/job-cards"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Job Cards Management" onLogout={handleLogout}>
-                <JobCards />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Job Cards Management">
+              <JobCards />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/job-card-items"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Job Card Items Management" onLogout={handleLogout}>
-                <JobCardItems />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Job Card Items Management">
+              <JobCardItems />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/user-management"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="User Management" onLogout={handleLogout}>
-                <UserManagement />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="User Management">
+              <UserManagement />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/categories"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Categories Management" onLogout={handleLogout}>
-                <Categories />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Categories Management">
+              <Categories />
+            </ProtectedRoute>
           }
         />
-        {/* Add Invoicing Route */}
         <Route
           path="/admin/invoicing"
           element={
-            user?.role === USER_ROLES.ADMIN ? (
-              <DashboardLayout title="Invoicing Management" onLogout={handleLogout}>
-                <Invoicing />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="ADMIN" title="Invoicing Management">
+              <Invoicing />
+            </ProtectedRoute>
           }
         />
 
-        {/* Technician Subroutes */}
+        {/* Technician Routes */}
+        <Route
+          path="/technician"
+          element={
+            <ProtectedRoute requiredRole="TECHNICIAN" title="Technician Dashboard">
+              <TechnicianDashboard />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/technician/schedule"
           element={
-            user?.role === USER_ROLES.TECHNICIAN ? (
-              <DashboardLayout title="My Schedule" onLogout={handleLogout}>
-                <TechnicianSchedule />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="TECHNICIAN" title="My Schedule">
+              <TechnicianSchedule />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/technician/appointments"
           element={
-            user?.role === USER_ROLES.TECHNICIAN ? (
-              <DashboardLayout title="My Appointments" onLogout={handleLogout}>
-                <Appointments />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="TECHNICIAN" title="My Appointments">
+              <Appointments />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/technician/job-cards"
           element={
-            user?.role === USER_ROLES.TECHNICIAN ? (
-              <DashboardLayout title="My Job Cards" onLogout={handleLogout}>
-                <JobCards />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="TECHNICIAN" title="My Job Cards">
+              <TechnicianJobCards />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/technician/job-card-items"
           element={
-            user?.role === USER_ROLES.TECHNICIAN ? (
-              <DashboardLayout title="Job Card Items" onLogout={handleLogout}>
-                <JobCardItems />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="TECHNICIAN" title="Job Card Items">
+              <JobCardItems />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/technician/parts"
           element={
-            user?.role === USER_ROLES.TECHNICIAN ? (
-              <DashboardLayout title="Parts Inventory" onLogout={handleLogout}>
-                <PartsInventory />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="TECHNICIAN" title="Parts Inventory">
+              <TechnicianPartsInventory />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/technician/vehicles"
           element={
-            user?.role === USER_ROLES.TECHNICIAN ? (
-              <DashboardLayout title="Vehicles Management" onLogout={handleLogout}>
-                <Vehicles />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="TECHNICIAN" title="Vehicles Management">
+              <TechnicianVehicle />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/technician/categories"
           element={
-            user?.role === USER_ROLES.TECHNICIAN ? (
-              <DashboardLayout title="Service Categories" onLogout={handleLogout}>
-                <Categories />
-              </DashboardLayout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <ProtectedRoute requiredRole="TECHNICIAN" title="Service Categories">
+              <Categories />
+            </ProtectedRoute>
           }
         />
 
-        {/* Customer Subroutes */}
+        {/* Customer Routes */}
+        <Route
+          path="/customer"
+          element={
+            <ProtectedRoute requiredRole="CUSTOMER" title="Customer Dashboard">
+              <CustomerDashboard />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/customer/bookings"
           element={
-            (() => {
-              console.log('Customer bookings route - user:', user, 'user.role:', user?.role);
-              const isCustomer = user && (
-                user.role === USER_ROLES.CUSTOMER || 
-                user.role === 'customer' || 
-                user.role === 1 ||
-                user.roleString === 'customer' ||
-                user.numericRole === 1
-              );
-              console.log('Bookings - isCustomer:', isCustomer);
-              
-              return isCustomer ? (
-                <DashboardLayout title="Book a Service" onLogout={handleLogout}>
-                  <Booking />
-                </DashboardLayout>
-              ) : (
-                <Navigate to="/login" replace />
-              );
-            })()
+            <ProtectedRoute requiredRole="CUSTOMER" title="Book a Service">
+              <Booking />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/customer/vehicles"
           element={
-            (() => {
-              console.log('Customer vehicles route - user:', user, 'user.role:', user?.role);
-              const isCustomer = user && (
-                user.role === USER_ROLES.CUSTOMER || 
-                user.role === 'customer' || 
-                user.role === 1 ||
-                user.roleString === 'customer' ||
-                user.numericRole === 1
-              );
-              console.log('Vehicles - isCustomer:', isCustomer);
-              
-              return isCustomer ? (
-                <DashboardLayout title="My Vehicles" onLogout={handleLogout}>
-                  <CustomerVehicles />
-                </DashboardLayout>
-              ) : (
-                <Navigate to="/login" replace />
-              );
-            })()
+            <ProtectedRoute requiredRole="CUSTOMER" title="My Vehicles">
+              <CustomerVehicles />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/customer/categories"
           element={
-            (() => {
-              console.log('Customer categories route - user:', user, 'user.role:', user?.role);
-              const isCustomer = user && (
-                user.role === USER_ROLES.CUSTOMER || 
-                user.role === 'customer' || 
-                user.role === 1 ||
-                user.roleString === 'customer' ||
-                user.numericRole === 1
-              );
-              console.log('Categories - isCustomer:', isCustomer);
-              
-              return isCustomer ? (
-                <DashboardLayout title="Service Categories" onLogout={handleLogout}>
-                  <Categories />
-                </DashboardLayout>
-              ) : (
-                <Navigate to="/login" replace />
-              );
-            })()
+            <ProtectedRoute requiredRole="CUSTOMER" title="Service Categories">
+              <Categories />
+            </ProtectedRoute>
           }
         />
-
-        {/* Customer Previous Services */}
         <Route
           path="/customer/previous-services"
           element={
-            (() => {
-              const isCustomer = user && (
-                user.role === USER_ROLES.CUSTOMER || 
-                user.role === 'customer' || 
-                user.role === 1 ||
-                user.roleString === 'customer' ||
-                user.numericRole === 1
-              );
-              return isCustomer ? (
-                <DashboardLayout title="Previous Services" onLogout={handleLogout}>
-                  <PreviousServices />
-                </DashboardLayout>
-              ) : (
-                <Navigate to="/login" replace />
-              );
-            })()
+            <ProtectedRoute requiredRole="CUSTOMER" title="Previous Services">
+              <PreviousServices />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Supervisor Routes */}
+        <Route
+          path="/supervisor"
+          element={
+            <ProtectedRoute requiredRole="SUPERVISOR" title="Supervisor Dashboard">
+              <SupervisorDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/supervisor/job-cards"
+          element={
+            <ProtectedRoute requiredRole="SUPERVISOR" title="Supervisor Job Cards">
+              <SupervisorJobCards />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/supervisor/user-management"
+          element={
+            <ProtectedRoute requiredRole="SUPERVISOR" title="User Management">
+              <SupervisorUserManagement />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Common Routes */}
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute title="My Profile">
+              <Profile />
+            </ProtectedRoute>
           }
         />
 

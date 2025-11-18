@@ -4,7 +4,13 @@ import {
   GET_APPOINTMENTS_FAIL,
   UPDATE_APPOINTMENT_REQUEST,
   UPDATE_APPOINTMENT_SUCCESS,
-  UPDATE_APPOINTMENT_FAIL
+  UPDATE_APPOINTMENT_FAIL,
+  ASSIGN_TECHNICIAN_REQUEST,
+  ASSIGN_TECHNICIAN_SUCCESS,
+  ASSIGN_TECHNICIAN_FAIL,
+  GET_TECHNICIAN_SERVICES_REQUEST,
+  GET_TECHNICIAN_SERVICES_SUCCESS,
+  GET_TECHNICIAN_SERVICES_FAIL
 } from "../constants/AppointmentConstants";
 
 import axios from 'axios';
@@ -54,7 +60,7 @@ export const getAppointments = () => async (dispatch) => {
 export const updateAppointmentStatus = (bookingId, statusData) => async (dispatch) => {
   try {
     dispatch({ type: UPDATE_APPOINTMENT_REQUEST });
-    const { data } = await axios.put(`/Bookings/UpdateBookingStatus/${bookingId}`, statusData);
+    const { data } = await axios.post(`/Bookings/PutBookingsDetails/${bookingId}`, statusData);
 
     if (data.StatusCode === 200) {
       console.log('Appointment status updated successfully:', data.ResultSet);
@@ -83,6 +89,62 @@ export const updateAppointmentStatus = (bookingId, statusData) => async (dispatc
       type: UPDATE_APPOINTMENT_FAIL,
       payload: message
     });
+  }
+};
+
+// Action to assign technician to booking
+export const assignTechnicianToBooking = (bookingId, technicianId, technicianName = '') => async (dispatch) => {
+  try {
+    console.log('Assigning technician to booking:', { bookingId, technicianId, technicianName });
+
+    dispatch({ type: ASSIGN_TECHNICIAN_REQUEST });
+
+    const requestData = {
+      BookingID: String(bookingId),
+      TechnicianID: String(technicianId)
+    };
+
+    const { data } = await axios.post('/Bookings/AssignTechnicianToBooking', requestData);
+
+    console.log('Assign technician response:', data);
+
+    if (data.StatusCode === 200) {
+      console.log('Technician assigned successfully');
+
+      dispatch({
+        type: ASSIGN_TECHNICIAN_SUCCESS,
+        payload: { 
+          bookingId, 
+          technicianId, 
+          technicianName 
+        }
+      });
+
+      return { success: true, message: 'Technician assigned successfully' };
+    } else {
+      const msg = data.Message || "Failed to assign technician";
+      console.error('Error assigning technician:', msg);
+
+      dispatch({
+        type: ASSIGN_TECHNICIAN_FAIL,
+        payload: msg
+      });
+
+      return { success: false, message: msg };
+    }
+  } catch (error) {
+    const message = (error.response && error.response.data && error.response.data.message) || 
+                   error.message || 
+                   error.toString();
+    
+    console.error('Error while assigning technician:', message);
+    
+    dispatch({
+      type: ASSIGN_TECHNICIAN_FAIL,
+      payload: message
+    });
+
+    return { success: false, message };
   }
 };
 
@@ -169,7 +231,60 @@ export const createBookingDetails = async (bookingData) => {
     console.log('AddBookingsDetails response:', data);
     return data;
   } catch (err) {
-    console.error('Error calling AddBookingsDetails:', err);
+      // Backend endpoint `PutBookingsDetails` accepts POST in practice (Postman uses POST).
+      // Build payload matching the backend expected shape (Postman uses B_BookingID & B_BookingStatus)
+      const payload = (typeof statusData === 'string' || typeof statusData === 'number')
+        ? { B_BookingID: String(bookingId), B_BookingStatus: String(statusData) }
+        : ({ B_BookingID: String(bookingId), ...statusData });
+
+      const { data } = await axios.post(`/Bookings/PutBookingsDetails/${bookingId}`, payload);
     throw err;
+  }
+};
+
+// NEW ACTION: Get services by technician ID
+export const getServicesByTechnicianID = (technicianId) => async (dispatch) => {
+  try {
+    console.log('Fetching services for technician:', technicianId);
+
+    dispatch({ type: GET_TECHNICIAN_SERVICES_REQUEST });
+
+    const { data } = await axios.get(`/Bookings/GetServicesByTechnicianID?TechnicianID=${technicianId}`);
+
+    console.log('Technician services fetch response:', data);
+
+    if (data.StatusCode === 200) {
+      console.log('Saving technician services data to the store:', data.ResultSet);
+
+      dispatch({
+        type: GET_TECHNICIAN_SERVICES_SUCCESS,
+        payload: data.ResultSet
+      });
+
+      return { success: true, data: data.ResultSet };
+    } else {
+      const msg = data.Message || data.Result || "Failed to fetch technician services";
+      console.error('Error fetching technician services:', msg);
+
+      dispatch({
+        type: GET_TECHNICIAN_SERVICES_FAIL,
+        payload: msg
+      });
+
+      return { success: false, message: msg };
+    }
+  } catch (error) {
+    const message = (error.response && error.response.data && error.response.data.message) ||
+                   error.message ||
+                   error.toString();
+
+    console.error('Error while fetching technician services:', message);
+
+    dispatch({
+      type: GET_TECHNICIAN_SERVICES_FAIL,
+      payload: message
+    });
+
+    return { success: false, message };
   }
 };

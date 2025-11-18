@@ -249,7 +249,7 @@ export default new AuthService();*/
 // services/authService.js
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:60748'; // Your backend URL
+
 
 // Configure axios defaults
 axios.defaults.baseURL = API_BASE_URL;
@@ -347,7 +347,8 @@ export const authService = {
   // Verify OTP with backend, persist canonical user object and return it
   verifyOtp: async (mobileNumber, otpCode) => {
     try {
-      const resp = await fetch(`http://localhost:60748/Login/VerifyOtp?contact=${encodeURIComponent(mobileNumber)}&otpCode=${encodeURIComponent(otpCode)}`, {
+      const resp = await fetch(`https://automechbackend.dockyardsoftware.com/Login/VerifyOtp?contact=${encodeURIComponent(mobileNumber)}&otpCode=${encodeURIComponent(otpCode)}`, {
+      //const resp = await fetch(`http://localhost:60748/Login/VerifyOtp?contact=${encodeURIComponent(mobileNumber)}&otpCode=${encodeURIComponent(otpCode)}`, {
         method: 'POST'
       });
       const data = await resp.json();

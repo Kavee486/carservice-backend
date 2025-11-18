@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Package, Plus, Search, Filter, Edit3, Trash2, RefreshCw, AlertTriangle, Box, List } from 'lucide-react';
+import { Package, Plus, Search, Filter, Edit3, Trash2, RefreshCw, AlertTriangle, Box, List, X } from 'lucide-react';
 import {
   GetAllPartsInventory,
   AddPartInventory,
@@ -23,17 +23,92 @@ const PartsInventory = () => {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [bulkSubmitLoading, setBulkSubmitLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [bulkParts, setBulkParts] = useState([{
     name: '',
     categoryId: '',
     stockQty: '',
     unitPrice: ''
   }]);
+  
+  // State for alerts
+  const [showOutOfStockAlert, setShowOutOfStockAlert] = useState(false);
+  const [showLowStockAlert, setShowLowStockAlert] = useState(false);
+  const [outOfStockParts, setOutOfStockParts] = useState([]);
+  const [lowStockParts, setLowStockParts] = useState([]);
+  const [alertProgress, setAlertProgress] = useState(100);
+  const [currentAlertType, setCurrentAlertType] = useState(null); // 'outOfStock' or 'lowStock'
 
   useEffect(() => {
     dispatch(GetAllPartsInventory());
     dispatch(GetAllCategories());
   }, [dispatch]);
+
+  // Custom hook for alert management
+  const useStockAlerts = (parts) => {
+    useEffect(() => {
+      if (parts && Array.isArray(parts)) {
+        const outOfStock = parts.filter(part => parseInt(part?.P_StockQty || 0) === 0);
+        const lowStock = parts.filter(part => {
+          const stockQty = parseInt(part?.P_StockQty || 0);
+          return stockQty > 0 && stockQty <= 5;
+        });
+        
+        setOutOfStockParts(outOfStock);
+        setLowStockParts(lowStock);
+        
+        // Show alerts in sequence: out-of-stock first, then low stock
+        if (outOfStock.length > 0) {
+          setCurrentAlertType('outOfStock');
+          setShowOutOfStockAlert(true);
+          setShowLowStockAlert(false);
+        } else if (lowStock.length > 0) {
+          setCurrentAlertType('lowStock');
+          setShowLowStockAlert(true);
+          setShowOutOfStockAlert(false);
+        } else {
+          setShowOutOfStockAlert(false);
+          setShowLowStockAlert(false);
+          setCurrentAlertType(null);
+        }
+      }
+    }, [parts]);
+  };
+
+  // Use the custom alert hook
+  useStockAlerts(parts);
+
+  // Auto-hide alert after 5 seconds
+  useEffect(() => {
+    if (showOutOfStockAlert || showLowStockAlert) {
+      setAlertProgress(100);
+      const progressInterval = setInterval(() => {
+        setAlertProgress(prev => Math.max(0, prev - 20)); // Decrease by 20% every second
+      }, 1000);
+      
+      const timer = setTimeout(() => {
+        if (showOutOfStockAlert) {
+          setShowOutOfStockAlert(false);
+          // After out-of-stock alert closes, check if we should show low stock alert
+          setTimeout(() => {
+            if (lowStockParts.length > 0 && !showLowStockAlert) {
+              setCurrentAlertType('lowStock');
+              setShowLowStockAlert(true);
+              setAlertProgress(100);
+            }
+          }, 500);
+        } else if (showLowStockAlert) {
+          setShowLowStockAlert(false);
+          setCurrentAlertType(null);
+        }
+      }, 5000);
+      
+      return () => {
+        clearTimeout(timer);
+        clearInterval(progressInterval);
+      };
+    }
+  }, [showOutOfStockAlert, showLowStockAlert, lowStockParts.length]);
 
   const handleAddPart = () => {
     setCurrentPart(null);
@@ -188,25 +263,47 @@ const PartsInventory = () => {
     dispatch(GetAllCategories());
   };
 
+  // Close alert functions
+  const handleCloseOutOfStockAlert = () => {
+    setShowOutOfStockAlert(false);
+    setAlertProgress(100);
+    // After closing out-of-stock, show low stock if available
+    setTimeout(() => {
+      if (lowStockParts.length > 0 && !showLowStockAlert) {
+        setCurrentAlertType('lowStock');
+        setShowLowStockAlert(true);
+        setAlertProgress(100);
+      }
+    }, 500);
+  };
+
+  const handleCloseLowStockAlert = () => {
+    setShowLowStockAlert(false);
+    setAlertProgress(100);
+    setCurrentAlertType(null);
+  };
+
   // Format currency as Rs
   const formatCurrency = (value) => {
     return `Rs ${parseFloat(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
   };
 
-  // Filter parts based on search term
+  // Filter parts based on search term and category
   const filteredParts = parts && Array.isArray(parts) && parts.length > 0
     ? parts.filter(part => {
-      const matchesSearch =
-        part?.P_PartName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        part?.P_CategoryName?.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = 
+          part?.P_PartName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          part?.P_CategoryName?.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const matchesCategory = !selectedCategory || part?.P_CategoryID === selectedCategory;
 
-      return matchesSearch;
-    })
+        return matchesSearch && matchesCategory;
+      })
     : [];
 
   // Calculate inventory stats
   const totalParts = parts?.length || 0;
-  const lowStock = parts?.filter(part => parseInt(part?.P_StockQty || 0) < 10 && parseInt(part?.P_StockQty || 0) > 0).length || 0;
+  const lowStock = parts?.filter(part => parseInt(part?.P_StockQty || 0) <= 5 && parseInt(part?.P_StockQty || 0) > 0).length || 0;
   const outOfStock = parts?.filter(part => parseInt(part?.P_StockQty || 0) === 0).length || 0;
   const totalValue = parts?.reduce((total, part) => total + (parseFloat(part?.P_UnitPrice || 0) * parseInt(part?.P_StockQty || 0)), 0) || 0;
 
@@ -252,6 +349,158 @@ const PartsInventory = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 md:px-6 py-4 md:py-6">
+      {/* Out of Stock Alert Popup */}
+      {showOutOfStockAlert && outOfStockParts.length > 0 && (
+        <div className="fixed top-4 right-4 left-4 md:left-auto md:max-w-md z-50 animate-fade-in">
+          <div className="bg-red-50 border border-red-200 rounded-xl shadow-lg p-4">
+            {/* Progress Bar */}
+            <div className="w-full bg-red-200 rounded-full h-1 mb-3">
+              <div 
+                className="bg-red-600 h-1 rounded-full transition-all duration-1000 ease-linear"
+                style={{ width: `${alertProgress}%` }}
+              ></div>
+            </div>
+            
+            <div className="flex items-start justify-between">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <div className="h-6 w-6 text-red-600">
+                    <AlertTriangle className="h-6 w-6" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-red-800 mb-1">
+                    Out of Stock Alert!
+                  </h4>
+                  <p className="text-sm text-red-700 mb-2">
+                    {outOfStockParts.length} part{outOfStockParts.length > 1 ? 's are' : ' is'} currently out of stock:
+                  </p>
+                  <ul className="text-xs text-red-600 space-y-1 max-h-24 overflow-y-auto">
+                    {outOfStockParts.slice(0, 5).map((part, index) => (
+                      <li key={part.P_PartID} className="flex items-center">
+                        <span className="w-2 h-2 bg-red-400 rounded-full mr-2"></span>
+                        {part.P_PartName}
+                        {part.P_CategoryName && (
+                          <span className="text-red-500 ml-1">
+                            ({part.P_CategoryName})
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                    {outOfStockParts.length > 5 && (
+                      <li className="text-red-500 font-medium">
+                        ...and {outOfStockParts.length - 5} more
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseOutOfStockAlert}
+                className="flex-shrink-0 text-red-400 hover:text-red-600 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-3 flex space-x-2">
+              <button
+                onClick={handleCloseOutOfStockAlert}
+                className="flex-1 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={() => {
+                  handleCloseOutOfStockAlert();
+                  handleAddPart();
+                }}
+                className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              >
+                Restock Parts
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Low Stock Alert Popup */}
+      {showLowStockAlert && lowStockParts.length > 0 && (
+        <div className="fixed top-4 right-4 left-4 md:left-auto md:max-w-md z-50 animate-fade-in"
+             style={{ top: showOutOfStockAlert ? '140px' : '16px' }}>
+          <div className="bg-orange-50 border border-orange-200 rounded-xl shadow-lg p-4">
+            {/* Progress Bar */}
+            <div className="w-full bg-orange-200 rounded-full h-1 mb-3">
+              <div 
+                className="bg-orange-600 h-1 rounded-full transition-all duration-1000 ease-linear"
+                style={{ width: `${alertProgress}%` }}
+              ></div>
+            </div>
+            
+            <div className="flex items-start justify-between">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <div className="h-6 w-6 text-orange-600">
+                    <AlertTriangle className="h-6 w-6" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-orange-800 mb-1">
+                    Low Stock Alert!
+                  </h4>
+                  <p className="text-sm text-orange-700 mb-2">
+                    {lowStockParts.length} part{lowStockParts.length > 1 ? 's are' : ' is'} running low on stock :
+                  </p>
+                  <ul className="text-xs text-orange-600 space-y-1 max-h-24 overflow-y-auto">
+                    {lowStockParts.slice(0, 5).map((part, index) => (
+                      <li key={part.P_PartID} className="flex items-center">
+                        <span className="w-2 h-2 bg-orange-400 rounded-full mr-2"></span>
+                        {part.P_PartName}
+                        <span className="text-orange-500 ml-1">
+                          (Stock: {part.P_StockQty})
+                        </span>
+                        {part.P_CategoryName && (
+                          <span className="text-orange-500 ml-1">
+                            ({part.P_CategoryName})
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                    {lowStockParts.length > 5 && (
+                      <li className="text-orange-500 font-medium">
+                        ...and {lowStockParts.length - 5} more
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseLowStockAlert}
+                className="flex-shrink-0 text-orange-400 hover:text-orange-600 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-3 flex space-x-2">
+              <button
+                onClick={handleCloseLowStockAlert}
+                className="flex-1 px-3 py-1.5 text-xs font-medium text-orange-700 bg-orange-100 hover:bg-orange-200 rounded-lg transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={() => {
+                  handleCloseLowStockAlert();
+                  handleAddPart();
+                }}
+                className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors"
+              >
+                Restock Parts
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-6">
         {/* Header Section */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl shadow-lg text-white p-6">
@@ -274,7 +523,14 @@ const PartsInventory = () => {
                 className="bg-white text-blue-600 rounded-lg hover:bg-blue-50 h-10 px-4 text-sm font-medium flex items-center border-0"
               >
                 <List className="h-4 w-4 mr-2" />
-                Add Parts
+                Bulk Add Parts
+              </button>
+              <button
+                onClick={handleAddPart}
+                className="bg-white text-blue-600 rounded-lg hover:bg-blue-50 h-10 px-4 text-sm font-medium flex items-center border-0"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Part
               </button>
             </div>
           </div>
@@ -345,7 +601,7 @@ const PartsInventory = () => {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="relative md:col-span-2">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <input
                 type="text"
@@ -354,6 +610,24 @@ const PartsInventory = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
               />
+            </div>
+            
+            <div>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+              >
+                <option value="">All Categories</option>
+                {categories && categories.map((category) => (
+                  <option
+                    key={category.C_CategoryID}
+                    value={category.C_CategoryID}
+                  >
+                    {category.C_CategoryName}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           
@@ -382,33 +656,46 @@ const PartsInventory = () => {
                       <th className="text-left py-3 px-4 text-gray-700 font-medium text-sm">Part Name</th>
                       <th className="text-left py-3 px-4 text-gray-700 font-medium text-sm">Category</th>
                       <th className="text-left py-3 px-4 text-gray-700 font-medium text-sm">Stock Quantity</th>
-                      <th className="text-left py-3 px-4 text-gray-700 font-medium text-sm">Unit Price (Rs)</th>
+                      <th className="text-right py-3 px-4 text-gray-700 font-medium text-sm">Unit Price (Rs)</th>
+                      <th className="text-left py-3 px-4 text-gray-700 font-medium text-sm">Status</th>
                       <th className="text-left py-3 px-4 text-gray-700 font-medium text-sm">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredParts.filter(Boolean).map((part, idx) => {
-                          const stockQty = parseInt(part?.P_StockQty || 0);
+                      const stockQty = parseInt(part?.P_StockQty || 0);
                       let stockColor = 'bg-green-100 text-green-800';
-                      if (stockQty === 0) stockColor = 'bg-red-100 text-red-800';
-                      else if (stockQty < 10) stockColor = 'bg-amber-100 text-amber-800';
+                      let statusText = 'In Stock';
+                      
+                      if (stockQty === 0) {
+                        stockColor = 'bg-red-100 text-red-800';
+                        statusText = 'Out of Stock';
+                      } else if (stockQty <= 5) {
+                        stockColor = 'bg-amber-100 text-amber-800';
+                        statusText = 'Low Stock';
+                      }
 
                       return (
-                            <tr key={part?.P_PartID || idx} className="border-b border-gray-200 hover:bg-blue-50 transition-colors duration-200">
-                              <td className="py-3 px-4 text-sm font-medium text-gray-900">{part?.P_PartName || '-'}</td>
-                              <td className="py-3 px-4">
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                  {part?.P_CategoryName || '-'}
-                                </span>
-                              </td>
+                        <tr key={part?.P_PartID || idx} className="border-b border-gray-200 hover:bg-blue-50 transition-colors duration-200">
+                          <td className="py-3 px-4 text-sm font-medium text-gray-900">{part?.P_PartName || '-'}</td>
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              {part?.P_CategoryName || 'No Category'}
+                            </span>
+                          </td>
                           <td className="py-3 px-4">
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${stockColor}`}>
                               {stockQty}
                             </span>
                           </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className="text-sm font-medium text-gray-900">
+                              {parseFloat(part?.P_UnitPrice || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                            </span>
+                          </td>
                           <td className="py-3 px-4">
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                  {formatCurrency(part?.P_UnitPrice)}
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${stockColor}`}>
+                              {statusText}
                             </span>
                           </td>
                           <td className="py-3 px-4">
@@ -424,7 +711,7 @@ const PartsInventory = () => {
                                 onClick={() => handleDeletePart(part)}
                                 className="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-100 transition-colors"
                                 title="Delete part"
-                                    disabled={deleteLoading[part?.P_PartID]}
+                                disabled={deleteLoading[part?.P_PartID]}
                               >
                                 {deleteLoading[part?.P_PartID] ? (
                                   <svg className="animate-spin h-4 w-4 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

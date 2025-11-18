@@ -55,7 +55,7 @@ const Categories = () => {
   };
 
   const handleDeleteCategory = async (category) => {
-    if (!window.confirm('Are you sure you want to inactivate this category?')) {
+    if (!window.confirm('Are you sure you want to delete this category? This action cannot be undone.')) {
       return;
     }
 
@@ -68,10 +68,10 @@ const Categories = () => {
       };
 
       await dispatch(DeleteCategory(categoryData));
-      message.success('Category inactivated successfully');
+      message.success('Category deleted successfully');
       dispatch(GetAllCategories());
     } catch (error) {
-      message.error('Failed to inactivate category');
+      message.error('Failed to delete category');
     } finally {
       setDeleteLoading(prev => ({ ...prev, [category.C_CategoryID]: false }));
     }
@@ -183,13 +183,9 @@ const Categories = () => {
 
   // Calculate statistics
   const totalCategories = categories?.length || 0;
-  const activeCategories = totalCategories;
-  const inactiveCategories = 0;
 
   const categoryStats = {
     total: totalCategories,
-    active: activeCategories,
-    inactive: inactiveCategories,
   };
 
   const StatCard = ({ title, value, icon, color, progress }) => (
@@ -203,7 +199,7 @@ const Categories = () => {
           <Text className="text-xl font-bold text-gray-900">{value}</Text>
           {progress !== undefined && (
             <Progress 
-              percent={Math.round((value / categoryStats.total) * 100)} 
+              percent={100} 
               size="small" 
               strokeColor={color}
               showInfo={false}
@@ -231,31 +227,12 @@ const Categories = () => {
       >
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center space-x-3">
-            <Avatar 
-              size="large" 
-              icon={<FolderOutlined />} 
-              className="bg-blue-100 text-blue-600"
-            />
             <div>
               <Text strong className="text-lg font-semibold text-gray-900 block">
                 {record.C_CategoryName || 'Unknown Category'}
               </Text>
-              <Text className="text-sm text-gray-500">#{record.C_CategoryID}</Text>
             </div>
           </div>
-          <Tag 
-            color="#52c41a" 
-            icon={<CheckCircleOutlined />}
-            style={{ 
-              backgroundColor: '#f6ffed', 
-              borderColor: '#52c41a',
-              color: '#52c41a',
-              borderRadius: '12px',
-              fontWeight: '600'
-            }}
-          >
-            ACTIVE
-          </Tag>
         </div>
 
         <Divider className="my-3" />
@@ -271,12 +248,13 @@ const Categories = () => {
               />
             </Tooltip>
             
-            <Tooltip title="Inactivate Category">
+            <Tooltip title="Delete Category">
               <Button
                 type="text"
                 icon={<DeleteOutlined className="text-red-600" />}
                 onClick={() => handleDeleteCategory(record)}
                 disabled={deleteLoading[record.C_CategoryID]}
+                loading={deleteLoading[record.C_CategoryID]}
                 className="hover:bg-red-50 rounded-lg w-10 h-10 flex items-center justify-center"
               />
             </Tooltip>
@@ -299,11 +277,7 @@ const Categories = () => {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <Text strong className="text-sm text-gray-700">Category ID:</Text>
-                <Text className="text-sm text-gray-600">#{record.C_CategoryID}</Text>
-              </div>
-              <div className="flex justify-between">
-                <Text strong className="text-sm text-gray-700">Status:</Text>
-                <Text className="text-sm text-gray-600">Active</Text>
+                <Text className="text-sm text-gray-600">{record.C_CategoryID}</Text>
               </div>
             </div>
           </div>
@@ -314,44 +288,13 @@ const Categories = () => {
 
   const columns = [
     {
-      title: <span className="text-sm font-semibold text-gray-700">Category ID</span>,
-      dataIndex: 'C_CategoryID',
-      key: 'C_CategoryID',
-      render: (text) => (
-        <div className="flex items-center">
-          <Avatar size="small" icon={<FolderOutlined />} className="bg-blue-100 text-blue-600 mr-2" />
-          <Text strong className="text-base font-semibold text-gray-900">#{text}</Text>
-        </div>
-      ),
-      width: 120,
-    },
-    {
       title: <span className="text-sm font-semibold text-gray-700">Category Name</span>,
       dataIndex: 'C_CategoryName',
       key: 'C_CategoryName',
-      render: (text) => <Text className="text-base font-medium text-gray-800">{text || 'N/A'}</Text>,
-      width: 200,
-    },
-    {
-      title: <span className="text-sm font-semibold text-gray-700">Status</span>,
-      key: 'status',
-      width: 100,
-      render: (_, record) => (
-        <Tag 
-          color="#52c41a" 
-          icon={<CheckCircleOutlined />}
-          style={{ 
-            backgroundColor: '#f6ffed', 
-            borderColor: '#52c41a',
-            color: '#52c41a',
-            borderRadius: '12px',
-            fontWeight: '600',
-            border: 'none'
-          }}
-        >
-          ACTIVE
-        </Tag>
+      render: (text) => (
+        <Text className="text-base font-medium text-gray-800">{text || 'N/A'}</Text>
       ),
+      width: 300,
     },
     {
       title: <span className="text-sm font-semibold text-gray-700">Actions</span>,
@@ -372,31 +315,33 @@ const Categories = () => {
           {
             key: 'delete',
             icon: <DeleteOutlined className="text-red-600" />,
-            label: 'Inactivate Category',
+            label: 'Delete Category',
             onClick: () => handleDeleteCategory(record)
           }
         ];
 
         return (
-          <Dropdown
-            menu={{ 
-              items: menuItems,
-              onClick: ({ key }) => {
-                const item = menuItems.find(item => item.key === key);
-                if (item && item.onClick) {
-                  item.onClick();
-                }
-              }
-            }}
-            trigger={['click']}
-            placement="bottomRight"
-          >
-            <Button 
-              type="text" 
-              icon={<EditOutlined className="text-gray-600" />} 
-              className="hover:bg-gray-50 rounded-lg w-10 h-10 flex items-center justify-center"
-            />
-          </Dropdown>
+          <Space>
+            <Tooltip title="Edit">
+              <Button
+                type="text"
+                icon={<EditOutlined className="text-blue-600" />}
+                onClick={() => handleEditCategory(record)}
+                className="hover:bg-blue-50 rounded-lg w-10 h-10 flex items-center justify-center"
+              />
+            </Tooltip>
+            
+            <Tooltip title="Delete">
+              <Button
+                type="text"
+                icon={<DeleteOutlined className="text-red-600" />}
+                onClick={() => handleDeleteCategory(record)}
+                disabled={deleteLoading[record.C_CategoryID]}
+                loading={deleteLoading[record.C_CategoryID]}
+                className="hover:bg-red-50 rounded-lg w-10 h-10 flex items-center justify-center"
+              />
+            </Tooltip>
+          </Space>
         );
       },
     },
@@ -452,7 +397,7 @@ const Categories = () => {
               <Button 
                 icon={<UnorderedListOutlined />} 
                 onClick={handleBulkAddCategory}
-                className="bg-green-600 hover:bg-green-700 text-white border-0 rounded-lg h-10 px-4 font-medium"
+                className="bg-white-600 hover:bg-white-700 text-blue border-0 rounded-lg h-10 px-4 font-medium"
               >
                 {screens.xs ? '' : 'Add Categories'}
               </Button>
@@ -478,24 +423,6 @@ const Categories = () => {
               progress
             />
           </Col>
-          <Col xs={24} sm={12} lg={8}>
-            <StatCard 
-              title="Active Categories" 
-              value={categoryStats.active} 
-              icon={<CheckCircleOutlined />}
-              color="text-green-600"
-              progress
-            />
-          </Col>
-          <Col xs={24} sm={12} lg={8}>
-            <StatCard 
-              title="Inactive Categories" 
-              value={categoryStats.inactive} 
-              icon={<CloseCircleOutlined />}
-              color="text-red-600"
-              progress
-            />
-          </Col>
         </Row>
 
         {/* Filters and Search */}
@@ -516,7 +443,7 @@ const Categories = () => {
               <SearchOutlined className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <input
                 type="text"
-                placeholder="Search categories by name or ID..."
+                placeholder="Search categories by name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
@@ -596,7 +523,7 @@ const Categories = () => {
                 size: 'default',
                 className: 'rounded-lg'
               }}
-              scroll={{ x: 800 }}
+              scroll={{ x: 600 }}
               className="rounded-lg custom-table"
               size="middle"
               rowClassName="hover:bg-blue-50 transition-colors duration-200"
